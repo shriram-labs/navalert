@@ -24,6 +24,27 @@ self.addEventListener('push', function (event) {
     data = {};
   }
 
+  // TEMPORARY DIAGNOSTIC: test pushes (sent only by the test button in
+  // observer.html, via notify-observer.js's isTest branch) carry a
+  // fixed title/body and skip the severity/distance formatting below
+  // entirely. Uses its own notification tag ('test-push') so it never
+  // collides with or replaces a real trip alert in the tray. Safe to
+  // delete this whole block once push delivery is confirmed working.
+  if (data.isTest) {
+    const testOptions = {
+      body: data.body || 'Web Push is working!',
+      icon: 'icon-192.png',
+      badge: 'icon-192.png',
+      tag: 'test-push',
+      renotify: true,
+      data: {
+        tripId: data.tripId // Trip ID only - the PIN is never included here.
+      }
+    };
+    event.waitUntil(self.registration.showNotification(data.title || 'Test Push Notification', testOptions));
+    return;
+  }
+
   const severityRaw = data.severity || 'route';
   const severityLabel = severityRaw.charAt(0).toUpperCase() + severityRaw.slice(1);
   const alertCount = data.alertCount || 1;
