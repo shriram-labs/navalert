@@ -55,7 +55,12 @@ module.exports = async function handler(req, res) {
     distanceFromRoute,
     destinationDistance,
     lat,
-    lon
+    lon,
+    // TEMPORARY DIAGNOSTIC fields (test button in observer.html). Not
+    // used by the real deviation-alert flow, which never sends these.
+    isTest,
+    title,
+    body
   } = req.body || {};
 
   if (!tripId || !pin) {
@@ -79,16 +84,29 @@ module.exports = async function handler(req, res) {
 
     // Deliberately omits `pin` - only the Trip ID travels in the push
     // payload, matching the requirement that the PIN never appears in
-    // the notification payload, text, or any URL.
-    const payload = JSON.stringify({
-      tripId: tripId,
-      severity: severity,
-      alertCount: alertCount,
-      distanceFromRoute: distanceFromRoute,
-      destinationDistance: destinationDistance,
-      lat: lat,
-      lon: lon
-    });
+    // the notification payload, text, or any URL. This holds for both
+    // branches below.
+    //
+    // TEMPORARY DIAGNOSTIC: when isTest is true (only ever sent by the
+    // test button in observer.html), send a fixed test payload instead
+    // of real deviation data. This is purely an additive branch - the
+    // real deviation payload shape below is unchanged.
+    const payload = isTest
+      ? JSON.stringify({
+          isTest: true,
+          tripId: tripId,
+          title: title || 'Test Push Notification',
+          body: body || 'Web Push is working!'
+        })
+      : JSON.stringify({
+          tripId: tripId,
+          severity: severity,
+          alertCount: alertCount,
+          distanceFromRoute: distanceFromRoute,
+          destinationDistance: destinationDistance,
+          lat: lat,
+          lon: lon
+        });
 
     await webpush.sendNotification(subscription, payload);
     res.status(200).json({ sent: true });
