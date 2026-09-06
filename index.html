@@ -913,7 +913,7 @@
   // ===================================================================
 
   // Time from confirmed deviation until alert #1 fires.
-  const SUSTAINED_DEVIATION_ALERT_MS = 45000;
+  const SUSTAINED_DEVIATION_ALERT_MS = 10000; // DEMO: 10 sec (was 45000)
 
   // Distance tiers for re-alert escalation (metres), each with its own
   // repeat interval. Boundaries have a 15 m hysteresis buffer applied in
@@ -923,9 +923,9 @@
   const ALERT_TIER_MILD_MODERATE_BOUNDARY = 100;   // 30-100m = mild, >100m = moderate+
   const ALERT_TIER_MODERATE_SEVERE_BOUNDARY = 300; // 100-300m = moderate, >300m = severe
 
-  const ALERT_INTERVAL_MILD_MS = 3 * 60 * 1000;     // 3 min
-  const ALERT_INTERVAL_MODERATE_MS = 2 * 60 * 1000; // 2 min
-  const ALERT_INTERVAL_SEVERE_MS = 30 * 1000;       // 30 sec
+  const ALERT_INTERVAL_MILD_MS = 30000;     // DEMO: 30 sec (was 3 min)
+  const ALERT_INTERVAL_MODERATE_MS = 20000; // DEMO: 20 sec (was 2 min)
+  const ALERT_INTERVAL_SEVERE_MS = 10000;   // DEMO: 10 sec (was 30 sec)
 
   // Explicit anti-spam floor: no re-alert may fire faster than this,
   // regardless of tier. The severe tier's interval already equals this
@@ -1055,7 +1055,7 @@
   // at the same call sites, not merged into it.
   // ===================================================================
 
-  const PUSH_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes, as agreed
+  const PUSH_COOLDOWN_MS = 10000; // DEMO: 10 sec (was 5 minutes)
 
   // Ranks tiers so we can detect a genuine ESCALATION (not just "still
   // deviated at the same severity").
