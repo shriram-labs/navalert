@@ -265,6 +265,19 @@
   <!-- ===== Dashboard (hidden until a trip is successfully joined) ===== -->
   <div id="dashboardContainer" style="display:none;">
 
+    <!-- ===== TEMPORARY DIAGNOSTIC: Test Push Notification card =====
+         Delete this card (and the matching JS block near the bottom of
+         the module script) once the Web Push pipeline has been
+         confirmed to work end-to-end. It reuses the exact same
+         subscription and Vercel endpoint the real deviation alerts
+         use - it does not touch route-deviation logic, Firebase
+         structure, VAPID keys, or notification security. -->
+    <div class="card" id="testPushCard">
+      <div class="card-title">Diagnostics (Temporary)</div>
+      <button id="testPushBtn" style="width:100%; background-color:#7c3aed; color:#ffffff; padding:12px; font-size:13.5px; font-weight:bold; border:none; border-radius:10px; cursor:pointer;">🔔 Test Push Notification</button>
+      <div class="status-sub" id="testPushStatus" style="margin-top:8px;">Sends a fixed test notification using this trip's stored push subscription.</div>
+    </div>
+
     <!-- ===== Live Map ===== -->
     <div class="card">
       <div class="card-title">Traveler Position</div>
@@ -834,6 +847,64 @@
   }
 
   monitorBtn.addEventListener('click', handleMonitorTrip);
+
+  // ===================================================================
+  // TEMPORARY DIAGNOSTIC: Test Push Notification button.
+  //
+  // Reuses the exact same subscription already stored at
+  // trips/<tripId>/<pin>/pushSubscription and the same Vercel endpoint
+  // the real deviation alerts POST to (notify-observer.js) - it just
+  // asks that endpoint to send a fixed test message (isTest: true)
+  // instead of real deviation data. Does not change route-deviation
+  // logic, Firebase structure, VAPID keys, or notification security.
+  // Safe to delete this whole block (and the matching HTML card above)
+  // once push delivery is confirmed working end-to-end.
+  // ===================================================================
+  const PUSH_NOTIFY_ENDPOINT = 'https://navalert-1ulcfju6t-shriram4.vercel.app/api/notify-observer';
+  const testPushBtn = document.getElementById('testPushBtn');
+  const testPushStatus = document.getElementById('testPushStatus');
+
+  if (testPushBtn) {
+    testPushBtn.addEventListener('click', async function () {
+      const tripId = tripIdInput.value.trim();
+      const pin = tripPinInput.value.trim();
+
+      if (!tripId || !pin) {
+        testPushStatus.textContent = 'No active trip - join a trip first so a push subscription exists.';
+        return;
+      }
+
+      testPushBtn.disabled = true;
+      testPushStatus.textContent = 'Sending test push...';
+
+      try {
+        const response = await fetch(PUSH_NOTIFY_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tripId: tripId,
+            pin: pin,
+            isTest: true,
+            title: 'Test Push Notification',
+            body: 'Web Push is working!'
+          })
+        });
+        const result = await response.json();
+
+        if (result.sent) {
+          testPushStatus.textContent = 'Test push sent - check your notifications.';
+        } else if (result.reason === 'no-subscription') {
+          testPushStatus.textContent = 'No push subscription found for this trip yet - re-tap MONITOR TRIP to re-enable notifications.';
+        } else {
+          testPushStatus.textContent = 'Push not sent: ' + (result.reason || result.error || 'unknown reason');
+        }
+      } catch (err) {
+        testPushStatus.textContent = 'Test push failed: ' + err.message;
+      } finally {
+        testPushBtn.disabled = false;
+      }
+    });
+  }
 </script>
 
 </body>
