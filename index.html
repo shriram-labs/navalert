@@ -1005,6 +1005,8 @@
     if (deviationStartTime === null) {
       // Just entered a confirmed-deviated streak - start the clock.
       deviationStartTime = Date.now();
+      // TEMPORARY DEBUG - remove after diagnosing push notifications.
+      console.log('[PUSH-DEBUG] Confirmed DEVIATED - starting sustained-deviation timer at', new Date(deviationStartTime).toISOString());
       return;
     }
 
@@ -1015,6 +1017,8 @@
         alertCount = 1;
         currentAlertTier = classifyAlertTier(distance, null);
         lastAlertTime = Date.now();
+        // TEMPORARY DEBUG - remove after diagnosing push notifications.
+        console.log('[PUSH-DEBUG] Sustained-deviation timer reached (' + SUSTAINED_DEVIATION_ALERT_MS + ' ms) - Alert #1 ACTIVE. tier=' + currentAlertTier + ' distance=' + distance);
       }
       return;
     }
@@ -1077,6 +1081,7 @@
 
   let lastPushSentTime = null;             // timestamp of the most recently sent push
   let lastNotifiedTier = null;             // the tier that the last sent push reported
+  let lastNotifiedAlertCount = null;       // the alertCount that the last sent push reported
 
   // Called from the same 3 places cancelSustainedDeviationTracking() is
   // called (destination reached, start/stop monitoring) - kept as a
@@ -1084,6 +1089,7 @@
   // code is never touched by this stage.
   function resetPushAlertState() {
     lastNotifiedTier = null;
+    lastNotifiedAlertCount = null;
     // Deliberately NOT resetting lastPushSentTime here - the 5-minute
     // cooldown is a global floor across episodes, not per-episode, so a
     // brand new deviation right after a resolved one still can't spam.
@@ -1097,19 +1103,42 @@
   // RTDB path server-side - it is never put in the push payload the
   // browser/OS actually displays (see service-worker.js).
   function checkAndSendPushAlert(params) {
+    // TEMPORARY DEBUG - remove after diagnosing push notifications.
+    console.log('[PUSH-DEBUG] checkAndSendPushAlert called with:', {
+      alertActive: params.alertActive,
+      alertTier: params.alertTier,
+      alertCount: params.alertCount,
+      distanceFromRoute: params.distanceFromRoute,
+      destinationDistance: params.destinationDistance,
+      currentTripId: currentTripId,
+      currentTripPin: currentTripPin
+    });
+
     if (!params.alertActive || !currentTripId || !currentTripPin) {
       // Not currently in an active-alert state, or no trip in progress -
       // nothing to send.
+      // TEMPORARY DEBUG - remove after diagnosing push notifications.
+      if (!params.alertActive) {
+        console.log('[PUSH-DEBUG] SKIP - no active alert (alertActive is false)');
+      } else {
+        console.log('[PUSH-DEBUG] SKIP - missing Trip ID/PIN (currentTripId=' + currentTripId + ', currentTripPin=' + currentTripPin + ')');
+      }
       return;
     }
 
-    const isFirstAlert = (params.alertCount === 1 && lastNotifiedTier === null);
-    const isEscalation = (lastNotifiedTier !== null &&
-      ALERT_TIER_RANK[params.alertTier] > ALERT_TIER_RANK[lastNotifiedTier]);
-
-    if (!isFirstAlert && !isEscalation) {
-      // Same tier repeat, or count incremented within the same tier -
-      // explicitly excluded per the "not every repeated alert" requirement.
+    // ELIGIBILITY CONDITION (changed): previously this only allowed
+    // alert #1 or a tier escalation through, skipping every repeated
+    // alert at the same tier. Per the updated requirement, every
+    // distinct alert count should trigger a push while the deviation
+    // remains active - so we now dedupe on alertCount itself: skip only
+    // if we've already sent a push for this exact count (guards against
+    // this function being called more than once for the same count
+    // before alertCount next increments). alertCount's own incrementing
+    // logic in updateSustainedDeviationTracking() is unchanged - this
+    // only changes which counts are allowed to reach the fetch() below.
+    if (params.alertCount === lastNotifiedAlertCount) {
+      // TEMPORARY DEBUG - remove after diagnosing push notifications.
+      console.log('[PUSH-DEBUG] SKIP - already notified for alert #' + params.alertCount + ' (lastNotifiedAlertCount=' + lastNotifiedAlertCount + ')');
       return;
     }
 
@@ -1118,8 +1147,20 @@
       // Cooldown floor not yet elapsed - skip this occurrence entirely
       // (no queuing), consistent with keeping this a simple, defensible
       // dedup rule rather than a complex retry system.
+      // TEMPORARY DEBUG - remove after diagnosing push notifications.
+      console.log('[PUSH-DEBUG] SKIP - cooldown active (' + (now - lastPushSentTime) + ' ms since last push, needs ' + PUSH_COOLDOWN_MS + ' ms)');
       return;
     }
+
+    // TEMPORARY DEBUG - remove after diagnosing push notifications.
+    console.log('[PUSH-DEBUG] Sending push - calling fetch(' + PUSH_NOTIFY_ENDPOINT + ')', {
+      tripId: currentTripId,
+      pin: currentTripPin,
+      severity: params.alertTier,
+      alertCount: params.alertCount,
+      distanceFromRoute: params.distanceFromRoute,
+      destinationDistance: params.destinationDistance
+    });
 
     fetch(PUSH_NOTIFY_ENDPOINT, {
       method: 'POST',
@@ -1134,14 +1175,29 @@
         lat: params.lat,
         lon: params.lon
       })
+    }).then(function (response) {
+      // TEMPORARY DEBUG - remove after diagnosing push notifications.
+      console.log('[PUSH-DEBUG] /api/notify-observer response status:', response.status);
+      response.clone().json().then(function (data) {
+        console.log('[PUSH-DEBUG] /api/notify-observer response body:', data);
+      }).catch(function () {
+        response.clone().text().then(function (text) {
+          console.log('[PUSH-DEBUG] /api/notify-observer response body (non-JSON):', text);
+        }).catch(function () {
+          console.log('[PUSH-DEBUG] /api/notify-observer response body could not be read');
+        });
+      });
     }).catch(function (err) {
       // Never let a push-notify failure disrupt GPS tracking or the UI -
       // same defensive posture as every other Firebase call in this file.
       console.warn('Push notification request failed:', err.message);
+      // TEMPORARY DEBUG - remove after diagnosing push notifications.
+      console.log('[PUSH-DEBUG] fetch() itself failed (network/CORS error):', err);
     });
 
     lastPushSentTime = now;
     lastNotifiedTier = params.alertTier;
+    lastNotifiedAlertCount = params.alertCount;
   }
 
   // ----- Distance calculation helpers -----
