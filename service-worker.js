@@ -16,6 +16,23 @@
 // travels through the push network, the notification itself, or any
 // URL.
 
+// Formats a deviation distance for display only - never affects the
+// underlying deviation calculation, thresholds, or timing in index.html,
+// which continue to send/compute raw metres exactly as before.
+//   < 500 m  -> whole metres, e.g. "350 m"
+//   >= 500 m -> kilometres, e.g. "750 m" -> "0.75 km", "1000 m" -> "1.0 km"
+function formatDeviationDistance(meters) {
+  if (typeof meters !== 'number') return null;
+  if (meters < 500) {
+    return Math.round(meters) + ' m';
+  }
+  let km = (meters / 1000).toFixed(2);
+  if (km.endsWith('0')) {
+    km = km.slice(0, -1); // "1.00" -> "1.0" (keeps "0.75" and "2.35" as-is)
+  }
+  return km + ' km';
+}
+
 self.addEventListener('push', function (event) {
   let data = {};
   try {
@@ -52,7 +69,7 @@ self.addEventListener('push', function (event) {
 
   const bodyLines = [];
   if (typeof data.distanceFromRoute === 'number') {
-    bodyLines.push('Off route by ' + Math.round(data.distanceFromRoute) + ' m');
+    bodyLines.push('Off route by ' + formatDeviationDistance(data.distanceFromRoute));
   }
   if (typeof data.destinationDistance === 'number') {
     bodyLines.push(Math.round(data.destinationDistance) + ' m to destination');
