@@ -72,7 +72,9 @@ self.addEventListener('push', function (event) {
     bodyLines.push('Off route by ' + formatDeviationDistance(data.distanceFromRoute));
   }
   if (typeof data.destinationDistance === 'number') {
-    bodyLines.push(Math.round(data.destinationDistance) + ' m to destination');
+    const destKm = data.destinationDistance / 1000;
+    const destKmFormatted = destKm < 1 ? destKm.toFixed(2) : destKm.toFixed(1);
+    bodyLines.push(destKmFormatted + ' km to destination');
   }
   const body = bodyLines.length > 0 ? bodyLines.join(' | ') : 'Tap to view the live trip.';
 
