@@ -252,42 +252,12 @@
     color: #f87171;
     display: none;
   }
-
-  /* ===== Destination search results (5B) ===== */
-  .destination-results {
-    margin-top: 8px;
-    border: 1px solid #2a2d35;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  .destination-result-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 10px 12px;
-    background-color: #12141a;
-    color: #eaeaea;
-    border: none;
-    border-bottom: 1px solid #2a2d35;
-    font-size: 12.5px;
-    line-height: 1.4;
-    cursor: pointer;
-  }
-
-  .destination-result-item:last-child {
-    border-bottom: none;
-  }
-
-  .destination-result-item:hover,
-  .destination-result-item:active {
-    background-color: #1a1d24;
-  }
 </style>
 </head>
 <body>
 
 <div class="app">
+
 
   <!-- ===== Header ===== -->
   <div class="header">
@@ -333,10 +303,6 @@
     <div class="field-group">
       <label for="destinationInput">Destination</label>
       <input type="text" id="destinationInput" placeholder="e.g. Khammam Railway Station">
-      <!-- 5B: Destination search results - populated after SET DESTINATION
-           is pressed, when the destination text matches more than one
-           place (or none). Hidden until then. -->
-      <div id="destinationResultsList" class="destination-results" style="display:none;"></div>
     </div>
 
     <button id="geocodeBtn" disabled>SET DESTINATION</button>
@@ -1745,7 +1711,6 @@
   const pickupInput = document.getElementById('pickupInput');
 
   const destinationInput = document.getElementById('destinationInput');
-  const destinationResultsList = document.getElementById('destinationResultsList');
   const geocodeBtn = document.getElementById('geocodeBtn');
   const tripResult = document.getElementById('tripResult');
   const tripError = document.getElementById('tripError');
@@ -1927,37 +1892,49 @@
   }
 
   // ===================================================================
-  // 5B: IMPROVED DESTINATION SEARCH (v2 - fresh-search safe, no map fallback)
+  // 5B: DESTINATION SEARCH (v3 - single best match, no picker UI)
   //
-  // The original destination lookup asked Nominatim for exactly one
-  // result (limit=1) and blindly used it - unreliable for longer/less
-  // common names (e.g. "JNTUH University College of Engineering
-  // Mahabubabad"), where the top match by Nominatim's own ranking isn't
-  // always the one the user meant, or the full string returns nothing.
+  // The traveler only ever sees one outcome: either the destination is
+  // found and the route is generated, or a clear "no match" message is
+  // shown. Internally, several Nominatim candidates are still fetched
+  // and compared, but the app picks the strongest match itself instead
+  // of asking the traveler to choose from a list or tap the map.
   //
   // Current flow:
-  //   1. Ask Nominatim for several results (limit ~8) instead of one.
-  //   2. If the query as typed returns nothing useful, retry with a few
-  //      GENERIC query variants (not tied to any specific place name):
-  //      the full name, a simplified name with generic institution
-  //      words stripped, the trailing locality words, and a country hint.
-  //   3. Remove duplicate coordinates from the result set.
-  //   4. Let the traveler pick the correct one from a list.
-  //   5. If nothing useful is found at all, show a clear "no match"
-  //      message instead of guessing or falling back to a map tap -
-  //      NAVALERT needs a precise, geocoded destination.
+  //   1. Ask Nominatim for several results (limit ~8) per query variant,
+  //      not just one, so there is something to compare.
+  //   2. Try the query as typed, then a few GENERIC fallback variants
+  //      (not tied to any specific place name): a simplified name with
+  //      generic institution words stripped, the trailing locality
+  //      words, and a country hint.
+  //   3. Remove duplicate coordinates, then score every remaining
+  //      candidate against the original query text (token overlap) and
+  //      Nominatim's own importance ranking.
+  //   4. Keep the single highest-scoring candidate. Stop trying further
+  //      variants as soon as a confidently strong match is found.
+  //   5. If nothing found clears even a minimum relevance bar, show a
+  //      clear "no match" message - never silently pick something
+  //      unrelated, and never fall back to a manual map tap.
   //
   // FRESH-SEARCH SAFETY: every search run is tagged with a generation
   // number (destinationSearchGeneration). Editing the destination field,
   // or starting a new search, bumps the generation immediately. Any
-  // in-flight Nominatim request or previously rendered result list
-  // belongs to an older generation and is discarded/ignored as soon as
-  // it resolves, so an old, slow response for "Destination A" can never
-  // overwrite the screen after the traveler has moved on to searching
-  // for "Destination B".
+  // in-flight Nominatim request from an older generation is discarded as
+  // soon as it resolves, so a slow response for "Destination A" can
+  // never overwrite the screen after the traveler has moved on to
+  // searching for "Destination B".
   // ===================================================================
 
   const NOMINATIM_RESULTS_LIMIT = 8;
+
+  // A candidate needs at least this score to be used automatically.
+  // Below this, the match is considered too weak/unrelated to trust.
+  const DESTINATION_MIN_ACCEPTABLE_SCORE = 0.3;
+
+  // A candidate at or above this score is considered a confidently
+  // strong match, so the search stops trying further fallback variants
+  // once one is found (no need to keep querying Nominatim).
+  const DESTINATION_GOOD_ENOUGH_SCORE = 0.6;
 
   // Bumped every time a fresh destination search starts (button press)
   // or the destination text is edited. Any async work tagged with an
@@ -1965,21 +1942,19 @@
   let destinationSearchGeneration = 0;
 
   // Editing the destination text always invalidates whatever search is
-  // currently in flight or currently displayed, so the next search
-  // starts completely clean - this is what makes "search A, clear, type
-  // B" behave correctly instead of mixing old and new results.
+  // currently in flight, so the next search starts completely clean -
+  // this is what makes "search A, clear, type B" behave correctly
+  // instead of an old response overwriting a new one.
   destinationInput.addEventListener('input', function () {
     destinationSearchGeneration++;
-    destinationResultsList.style.display = 'none';
-    destinationResultsList.innerHTML = '';
     clearTripError();
   });
 
   // Builds a small list of query variants to try, in order, stopping as
-  // soon as one of them returns results. These are generic text
-  // transformations - none of them are specific to any one place name,
-  // so the same logic applies equally to a college, a railway station,
-  // a hospital, or a shop.
+  // soon as one of them yields a confidently strong match. These are
+  // generic text transformations - none of them are specific to any one
+  // place name, so the same logic applies equally to a college, a
+  // railway station, a hospital, or a shop.
   function buildDestinationQueryVariants(rawQuery) {
     const query = rawQuery.trim();
     const words = query.split(/\s+/).filter(Boolean);
@@ -2031,7 +2006,8 @@
 
   // Removes results that resolve to (essentially) the same coordinates -
   // Nominatim sometimes returns the same real-world place more than once
-  // from different data sources.
+  // from different data sources. Keeps `importance` (Nominatim's own
+  // 0-1 relevance score) since the ranking step below uses it.
   function dedupeGeocodeResults(rawResults) {
     const seen = new Set();
     const deduped = [];
@@ -2049,14 +2025,19 @@
         continue;
       }
       seen.add(key);
-      deduped.push({ lat: lat, lon: lon, displayName: rawResults[i].display_name });
+      deduped.push({
+        lat: lat,
+        lon: lon,
+        displayName: rawResults[i].display_name,
+        importance: typeof rawResults[i].importance === 'number' ? rawResults[i].importance : 0
+      });
     }
 
     return deduped;
   }
 
   // Single Nominatim request for a given query string, returning a
-  // deduplicated array of { lat, lon, displayName } (possibly empty).
+  // deduplicated array of candidates (possibly empty).
   async function fetchNominatimCandidates(query) {
     const url =
       'https://nominatim.openstreetmap.org/search?format=json&limit=' +
@@ -2077,88 +2058,73 @@
     return dedupeGeocodeResults(results || []);
   }
 
+  // Splits text into lowercase word tokens for simple relevance scoring.
+  function tokenizeForMatching(text) {
+    return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  }
+
+  // Scores how well a candidate matches what the traveler actually typed:
+  // mostly the fraction of the original query's words that appear in the
+  // candidate's full address (display_name), with Nominatim's own
+  // importance score as a smaller secondary signal (so, between two
+  // similarly-matching candidates, the more generally significant place
+  // wins, but keyword relevance always dominates).
+  function scoreDestinationCandidate(candidate, queryTokens) {
+    if (queryTokens.length === 0) {
+      return 0;
+    }
+    const nameTokens = new Set(tokenizeForMatching(candidate.displayName));
+    let matched = 0;
+    for (let i = 0; i < queryTokens.length; i++) {
+      if (nameTokens.has(queryTokens[i])) {
+        matched++;
+      }
+    }
+    const tokenOverlap = matched / queryTokens.length;
+    return tokenOverlap * 0.85 + candidate.importance * 0.15;
+  }
+
   // Tries each query variant in turn (sequentially, per Nominatim's
-  // usage policy) until one returns candidates, ranked in the order
-  // Nominatim itself returned them (its own relevance ranking).
-  // searchId ties this run to a specific destinationSearchGeneration
+  // usage policy), scores every candidate seen so far, and keeps the
+  // single best one. Stops early once a confidently strong match is
+  // found. searchId ties this run to a specific destinationSearchGeneration
   // value - if a newer search starts while a request is in flight, this
   // bails out immediately instead of issuing further requests or
   // returning a result for a query the user has already moved on from.
-  async function searchDestinationCandidates(rawQuery, searchId) {
+  async function findBestDestinationMatch(rawQuery, searchId) {
     const variants = buildDestinationQueryVariants(rawQuery);
+    const queryTokens = tokenizeForMatching(rawQuery);
+
+    let best = null; // { lat, lon, score }
 
     for (let i = 0; i < variants.length; i++) {
       if (searchId !== destinationSearchGeneration) {
-        return { candidates: [], stale: true };
+        return { match: null, stale: true };
       }
 
       const candidates = await fetchNominatimCandidates(variants[i]);
 
       if (searchId !== destinationSearchGeneration) {
-        return { candidates: [], stale: true };
+        return { match: null, stale: true };
       }
 
-      if (candidates.length > 0) {
-        return { candidates: candidates, stale: false };
+      for (let c = 0; c < candidates.length; c++) {
+        const score = scoreDestinationCandidate(candidates[c], queryTokens);
+        if (best === null || score > best.score) {
+          best = { lat: candidates[c].lat, lon: candidates[c].lon, score: score };
+        }
+      }
+
+      if (best !== null && best.score >= DESTINATION_GOOD_ENOUGH_SCORE) {
+        break; // strong match already found - no need to try more variants
       }
     }
 
-    return { candidates: [], stale: false };
-  }
+    if (best === null || best.score < DESTINATION_MIN_ACCEPTABLE_SCORE) {
+      return { match: null, stale: false };
+    }
 
-  // Renders the candidate list. Always rebuilds the list from scratch
-  // (innerHTML reset) so no stale buttons or duplicate listeners from a
-  // previous search can linger. searchId/pickupSnapshot are captured by
-  // each button's click handler so a click can be traced back to the
-  // exact search it came from and to the pickup coordinates in effect
-  // at that time.
-  function renderDestinationCandidates(candidates, searchId, pickupSnapshot, usingManualPickup) {
-    destinationResultsList.innerHTML = '';
-    destinationResultsList.style.display = 'block';
-
-    candidates.forEach(function (candidate) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'destination-result-item';
-      item.textContent = candidate.displayName;
-      item.addEventListener('click', function () {
-        // Ignore a click on a list left over from an older search - a
-        // fresh search already clears the list before this point, so
-        // this is just a safety net against any timing edge case.
-        if (searchId !== destinationSearchGeneration) {
-          return;
-        }
-        destinationResultsList.style.display = 'none';
-        destinationResultsList.innerHTML = '';
-        finalizeDestinationSelection(candidate, pickupSnapshot, usingManualPickup);
-      });
-      destinationResultsList.appendChild(item);
-    });
-  }
-
-  // Called once the traveler taps a specific candidate. Sets the shared
-  // destinationCoords and continues into the existing OSRM route-fetch
-  // flow, exactly as a single-result geocode used to.
-  async function finalizeDestinationSelection(candidate, pickupSnapshot, usingManualPickup) {
-    pickupCoords = pickupSnapshot;
-    destinationCoords = { lat: candidate.lat, lon: candidate.lon };
-
-    geocodeBtn.disabled = true;
-    geocodeBtn.textContent = 'FETCHING ROUTE...';
-
-    const pickupLabel = usingManualPickup ? 'Pickup' : 'Pickup (your location)';
-    tripResult.innerHTML =
-      '<strong>' + pickupLabel + ':</strong> ' + pickupCoords.lat.toFixed(6) + ', ' + pickupCoords.lon.toFixed(6) + '<br>' +
-      '<strong>Destination:</strong> ' + destinationCoords.lat.toFixed(6) + ', ' + destinationCoords.lon.toFixed(6);
-
-    routeFetchResult.textContent = 'Fetching road route...';
-
-    // fetchRouteFromOSRM handles its own errors internally (it reports
-    // them in routeFetchResult), so no extra try/catch is needed here.
-    await fetchRouteFromOSRM(pickupCoords, destinationCoords);
-
-    geocodeBtn.disabled = false;
-    geocodeBtn.textContent = 'SET DESTINATION';
+    return { match: { lat: best.lat, lon: best.lon }, stale: false };
   }
 
   async function handleSetLocations() {
@@ -2166,8 +2132,6 @@
     const usingManualPickup = pickupModeManual.checked;
 
     clearTripError();
-    destinationResultsList.style.display = 'none';
-    destinationResultsList.innerHTML = '';
 
     if (usingManualPickup) {
       const pickupText = pickupInput.value.trim();
@@ -2187,7 +2151,7 @@
 
     // Every fresh search attempt gets its own generation number. This is
     // what invalidates any earlier in-flight search (see
-    // searchDestinationCandidates/renderDestinationCandidates above).
+    // findBestDestinationMatch above).
     const searchId = ++destinationSearchGeneration;
 
     geocodeBtn.disabled = true;
@@ -2215,8 +2179,8 @@
         return;
       }
 
-      // ----- 5B: destination search (multiple results, no map fallback) -----
-      const searchOutcome = await searchDestinationCandidates(destinationText, searchId);
+      // ----- 5B: destination search (auto-ranked, single best match) -----
+      const searchOutcome = await findBestDestinationMatch(destinationText, searchId);
 
       // If a newer search has since started, this response is stale -
       // drop it silently and let the newer search's own flow handle the UI.
@@ -2224,17 +2188,22 @@
         return;
       }
 
-      if (searchOutcome.candidates.length === 0) {
+      if (searchOutcome.match === null) {
         showTripError('No matching destination found. Try a more specific name or include the city/locality.');
         tripResult.textContent = 'No trip set up yet.';
         return;
       }
 
-      tripResult.textContent = 'Multiple matches found - tap the correct destination:';
-      renderDestinationCandidates(searchOutcome.candidates, searchId, pickupCoords, usingManualPickup);
-      // The rest of the flow (setting destinationCoords and fetching the
-      // route) now continues from finalizeDestinationSelection() once the
-      // traveler taps a result, not from this function.
+      destinationCoords = { lat: searchOutcome.match.lat, lon: searchOutcome.match.lon };
+
+      const pickupLabel = usingManualPickup ? 'Pickup' : 'Pickup (your location)';
+      tripResult.innerHTML =
+        '<strong>' + pickupLabel + ':</strong> ' + pickupCoords.lat.toFixed(6) + ', ' + pickupCoords.lon.toFixed(6) + '<br>' +
+        '<strong>Destination:</strong> ' + destinationCoords.lat.toFixed(6) + ', ' + destinationCoords.lon.toFixed(6);
+
+      // ----- Stage 3B: fetch the real road route from OSRM -----
+      routeFetchResult.textContent = 'Fetching road route...';
+      await fetchRouteFromOSRM(pickupCoords, destinationCoords);
 
     } catch (err) {
       if (searchId === destinationSearchGeneration) {
