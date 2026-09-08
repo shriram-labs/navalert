@@ -252,6 +252,42 @@
     color: #f87171;
     display: none;
   }
+
+  /* ===== Destination search results (5B) ===== */
+  .destination-results {
+    margin-top: 8px;
+    border: 1px solid #2a2d35;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .destination-result-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    background-color: #12141a;
+    color: #eaeaea;
+    border: none;
+    border-bottom: 1px solid #2a2d35;
+    font-size: 12.5px;
+    line-height: 1.4;
+    cursor: pointer;
+  }
+
+  .destination-result-item:last-child {
+    border-bottom: none;
+  }
+
+  .destination-result-item:hover,
+  .destination-result-item:active {
+    background-color: #1a1d24;
+  }
+
+  .destination-result-manual {
+    color: #93c5fd;
+    font-weight: bold;
+  }
 </style>
 </head>
 <body>
@@ -302,6 +338,10 @@
     <div class="field-group">
       <label for="destinationInput">Destination</label>
       <input type="text" id="destinationInput" placeholder="e.g. Khammam Railway Station">
+      <!-- 5B: Destination search results - populated after SET DESTINATION
+           is pressed, when the destination text matches more than one
+           place (or none). Hidden until then. -->
+      <div id="destinationResultsList" class="destination-results" style="display:none;"></div>
     </div>
 
     <button id="geocodeBtn" disabled>SET DESTINATION</button>
@@ -1710,6 +1750,7 @@
   const pickupInput = document.getElementById('pickupInput');
 
   const destinationInput = document.getElementById('destinationInput');
+  const destinationResultsList = document.getElementById('destinationResultsList');
   const geocodeBtn = document.getElementById('geocodeBtn');
   const tripResult = document.getElementById('tripResult');
   const tripError = document.getElementById('tripError');
@@ -1890,11 +1931,188 @@
     };
   }
 
+  // ===================================================================
+  // 5B: IMPROVED DESTINATION SEARCH
+  //
+  // The original destination lookup asked Nominatim for exactly one
+  // result (limit=1) and blindly used it - fine for an unambiguous query
+  // like "Khammam Railway Station", but unreliable for longer/less common
+  // names (e.g. "JNTUH University College of Engineering Mahabubabad"),
+  // where the "best" match by Nominatim's own ranking isn't always the
+  // one the user meant, or the full string returns nothing at all.
+  //
+  // The new flow:
+  //   1. Ask Nominatim for several results (limit ~8) instead of one.
+  //   2. If the query as typed returns nothing useful, retry with a few
+  //      GENERIC query variants (not tied to any specific place name).
+  //   3. Remove duplicate coordinates from the combined result set.
+  //   4. Let the traveler pick the correct one from a list, instead of
+  //      the app silently guessing.
+  //   5. If nothing useful comes back at all, fall back to letting the
+  //      traveler tap the destination directly on the map.
+  // ===================================================================
+
+  const NOMINATIM_RESULTS_LIMIT = 8;
+
+  // Builds a small list of query variants to try, in order, stopping as
+  // soon as one of them returns results. These are generic text
+  // transformations - none of them are specific to any one place name,
+  // so the same logic applies equally to a college, a railway station,
+  // a hospital, or a shop.
+  function buildDestinationQueryVariants(rawQuery) {
+    const query = rawQuery.trim();
+    const variants = [query]; // always try exactly what the user typed, first
+
+    // Variant: append a country hint. Many local landmarks/institutions
+    // are missing or ambiguous in Nominatim without one, so retrying
+    // with ", India" appended often surfaces a match the bare query did
+    // not. (This app's user base is India-based; it is not tied to any
+    // single destination.)
+    variants.push(query + ', India');
+
+    const words = query.split(/\s+/).filter(Boolean);
+
+    // Variant: drop the first word. Handles queries that lead with an
+    // abbreviation/acronym (a university short-code, department name,
+    // etc.) that Nominatim's index does not recognize, while the
+    // remaining words are still enough to find the place.
+    if (words.length > 2) {
+      variants.push(words.slice(1).join(' '));
+    }
+
+    // Variant: just the last two words. Long institution names very
+    // often end with the town/area name (e.g. "... College <Town>"), so
+    // narrowing straight to that tail end can succeed where the full
+    // name fails.
+    if (words.length > 2) {
+      variants.push(words.slice(-2).join(' '));
+    }
+
+    // De-duplicate while preserving the try-order above.
+    return variants.filter(function (value, index) {
+      return variants.indexOf(value) === index;
+    });
+  }
+
+  // Removes results that resolve to (essentially) the same coordinates -
+  // Nominatim sometimes returns the same real-world place more than once
+  // from different data sources.
+  function dedupeGeocodeResults(rawResults) {
+    const seen = new Set();
+    const deduped = [];
+
+    for (let i = 0; i < rawResults.length; i++) {
+      const lat = parseFloat(rawResults[i].lat);
+      const lon = parseFloat(rawResults[i].lon);
+      if (isNaN(lat) || isNaN(lon)) {
+        continue;
+      }
+      // Round to 5 decimal places (~1 metre) so near-identical
+      // coordinates are treated as the same place.
+      const key = lat.toFixed(5) + ',' + lon.toFixed(5);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push({ lat: lat, lon: lon, displayName: rawResults[i].display_name });
+    }
+
+    return deduped;
+  }
+
+  // Single Nominatim request for a given query string, returning a
+  // deduplicated array of { lat, lon, displayName } (possibly empty).
+  async function fetchNominatimCandidates(query) {
+    const url =
+      'https://nominatim.openstreetmap.org/search?format=json&limit=' +
+      NOMINATIM_RESULTS_LIMIT + '&q=' + encodeURIComponent(query);
+
+    const response = await fetch(url, {
+      headers: {
+        // Nominatim's usage policy asks clients to identify themselves.
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Geocoding request failed (' + response.status + ')');
+    }
+
+    const results = await response.json();
+    return dedupeGeocodeResults(results || []);
+  }
+
+  // Tries each query variant in turn (sequentially, per Nominatim's
+  // usage policy) until one returns candidates. Returns
+  // { candidates, matchedQuery } - candidates is [] if nothing worked.
+  async function searchDestinationCandidates(rawQuery) {
+    const variants = buildDestinationQueryVariants(rawQuery);
+
+    for (let i = 0; i < variants.length; i++) {
+      const candidates = await fetchNominatimCandidates(variants[i]);
+      if (candidates.length > 0) {
+        return { candidates: candidates, matchedQuery: variants[i] };
+      }
+    }
+
+    return { candidates: [], matchedQuery: null };
+  }
+
+  // Renders the candidate list (plus a "pick manually" option) and
+  // resolves the returned Promise with whichever { lat, lon, displayName }
+  // the traveler ends up choosing - either a search result or a point
+  // tapped on the map.
+  function chooseDestination(candidates) {
+    return new Promise(function (resolve) {
+      destinationResultsList.innerHTML = '';
+      destinationResultsList.style.display = 'block';
+
+      candidates.forEach(function (candidate) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'destination-result-item';
+        item.textContent = candidate.displayName;
+        item.addEventListener('click', function () {
+          destinationResultsList.style.display = 'none';
+          destinationResultsList.innerHTML = '';
+          resolve(candidate);
+        });
+        destinationResultsList.appendChild(item);
+      });
+
+      const manualPickBtn = document.createElement('button');
+      manualPickBtn.type = 'button';
+      manualPickBtn.className = 'destination-result-item destination-result-manual';
+      manualPickBtn.textContent = '\uD83D\uDCCD None of these - pick destination on the map';
+      manualPickBtn.addEventListener('click', function () {
+        destinationResultsList.style.display = 'none';
+        destinationResultsList.innerHTML = '';
+        resolve(null); // null signals "go to manual map pick"
+      });
+      destinationResultsList.appendChild(manualPickBtn);
+    });
+  }
+
+  // Fallback path when search finds nothing useful at all, or the
+  // traveler chooses to bypass the list: shows the (possibly route-less)
+  // map and resolves once they tap a point on it.
+  function pickDestinationOnMap() {
+    ensureMapInitialized();
+    tripResult.textContent = 'Tap a point on the map below to set your destination.';
+    return new Promise(function (resolve) {
+      map.once('click', function (e) {
+        resolve({ lat: e.latlng.lat, lon: e.latlng.lng, displayName: 'Manually selected point' });
+      });
+    });
+  }
+
   async function handleSetLocations() {
     const destinationText = destinationInput.value.trim();
     const usingManualPickup = pickupModeManual.checked;
 
     clearTripError();
+    destinationResultsList.style.display = 'none';
+    destinationResultsList.innerHTML = '';
 
     if (usingManualPickup) {
       const pickupText = pickupInput.value.trim();
@@ -1930,15 +2148,24 @@
         pickupCoords = { lat: pickupResult.lat, lon: pickupResult.lon };
       }
 
-      const destinationResult = await geocodePlace(destinationText);
-      if (!destinationResult) {
-        showTripError('Could not find destination: "' + destinationText + '"');
-        tripResult.textContent = 'No trip set up yet.';
-        return;
+      // ----- 5B: destination search (multiple results, with fallback) -----
+      const searchOutcome = await searchDestinationCandidates(destinationText);
+
+      let chosenDestination;
+      if (searchOutcome.candidates.length === 0) {
+        tripResult.innerHTML =
+          '<span style="color:#f87171;">No matches found for "' + destinationText + '".</span> Pick the destination manually on the map below.';
+        chosenDestination = await pickDestinationOnMap();
+      } else {
+        geocodeBtn.textContent = 'CHOOSE DESTINATION...';
+        tripResult.textContent = 'Multiple matches found - tap the correct destination:';
+        const choice = await chooseDestination(searchOutcome.candidates);
+        chosenDestination = choice !== null ? choice : await pickDestinationOnMap();
       }
 
-      destinationCoords = { lat: destinationResult.lat, lon: destinationResult.lon };
+      destinationCoords = { lat: chosenDestination.lat, lon: chosenDestination.lon };
 
+      geocodeBtn.textContent = 'FETCHING ROUTE...';
       const pickupLabel = usingManualPickup ? 'Pickup' : 'Pickup (your location)';
       tripResult.innerHTML =
         '<strong>' + pickupLabel + ':</strong> ' + pickupCoords.lat.toFixed(6) + ', ' + pickupCoords.lon.toFixed(6) + '<br>' +
@@ -1967,14 +2194,49 @@
   // No map is drawn yet - that's Stage 3C.
   // ===================================================================
 
+  // ----- 5C: pick the best route out of OSRM's alternatives -----
+  // Given the array of routes OSRM returned, decide which one to actually
+  // use for navigation/deviation-detection:
+  //   - Find the fastest route (lowest duration) and the shortest route
+  //     (lowest distance).
+  //   - If the shortest route's travel time is still reasonably close to
+  //     the fastest one's (within ROUTE_TIME_TOLERANCE), prefer the
+  //     shorter route - a marginally slower but meaningfully shorter
+  //     path is usually the more sensible pick for a monitored trip.
+  //   - Otherwise, just go with the fastest route.
+  const ROUTE_TIME_TOLERANCE = 1.15; // shortest route may be up to 15% slower
+
+  function selectBestRoute(routes) {
+    let fastest = routes[0];
+    let shortest = routes[0];
+
+    for (let i = 1; i < routes.length; i++) {
+      if (routes[i].duration < fastest.duration) {
+        fastest = routes[i];
+      }
+      if (routes[i].distance < shortest.distance) {
+        shortest = routes[i];
+      }
+    }
+
+    if (shortest !== fastest && shortest.duration <= fastest.duration * ROUTE_TIME_TOLERANCE) {
+      return { chosen: shortest, preferredShorter: true };
+    }
+
+    return { chosen: fastest, preferredShorter: false };
+  }
+
   async function fetchRouteFromOSRM(pickup, destination) {
     // OSRM expects coordinates as lon,lat (opposite order from what we store)
     const coordsParam =
       pickup.lon + ',' + pickup.lat + ';' + destination.lon + ',' + destination.lat;
 
+    // alternatives=true asks OSRM for more than one route candidate when
+    // available; overview=full + geometries=geojson are unchanged since
+    // the deviation-detection algorithm needs the full route geometry.
     const url =
       'https://router.project-osrm.org/route/v1/driving/' + coordsParam +
-      '?overview=full&geometries=geojson';
+      '?overview=full&geometries=geojson&alternatives=true';
 
     try {
       const response = await fetch(url);
@@ -1991,8 +2253,13 @@
         return;
       }
 
+      // Pick the best route out of whatever OSRM returned (1 route if no
+      // alternative existed, more if it did).
+      const selection = selectBestRoute(data.routes);
+      const chosenRoute = selection.chosen;
+
       // GeoJSON coordinates come back as [lon, lat] pairs, in road order.
-      const coordinates = data.routes[0].geometry.coordinates;
+      const coordinates = chosenRoute.geometry.coordinates;
 
       // Convert to our internal {lat, lon} waypoint format and replace
       // the route used by the deviation algorithm.
@@ -2000,12 +2267,19 @@
         return { lat: pair[1], lon: pair[0] };
       });
 
-      const distanceKm = (data.routes[0].distance / 1000).toFixed(2);
-      const durationMin = (data.routes[0].duration / 60).toFixed(1);
+      const distanceKm = (chosenRoute.distance / 1000).toFixed(2);
+      const durationMin = (chosenRoute.duration / 60).toFixed(1);
 
-      routeFetchResult.innerHTML =
+      let routeInfoHtml =
         '<span style="color:#4ade80;">Road route loaded:</span> ' + distanceKm + ' km, ~' + durationMin + ' min<br>' +
         '<span style="color:#5a6070;">' + routeWaypoints.length + ' route points now used for deviation detection.</span>';
+
+      if (data.routes.length > 1) {
+        routeInfoHtml += '<br><span style="color:#5a6070;">' + data.routes.length + ' route option(s) considered - selected the ' +
+          (selection.preferredShorter ? 'shorter route (similar travel time to the fastest).' : 'fastest route.') + '</span>';
+      }
+
+      routeFetchResult.innerHTML = routeInfoHtml;
 
       // Stage 3C: draw the route, pickup, and destination on the live map.
       drawRouteOnMap(pickup, destination, routeWaypoints);
