@@ -283,11 +283,6 @@
   .destination-result-item:active {
     background-color: #1a1d24;
   }
-
-  .destination-result-manual {
-    color: #93c5fd;
-    font-weight: bold;
-  }
 </style>
 </head>
 <body>
@@ -1932,27 +1927,53 @@
   }
 
   // ===================================================================
-  // 5B: IMPROVED DESTINATION SEARCH
+  // 5B: IMPROVED DESTINATION SEARCH (v2 - fresh-search safe, no map fallback)
   //
   // The original destination lookup asked Nominatim for exactly one
-  // result (limit=1) and blindly used it - fine for an unambiguous query
-  // like "Khammam Railway Station", but unreliable for longer/less common
-  // names (e.g. "JNTUH University College of Engineering Mahabubabad"),
-  // where the "best" match by Nominatim's own ranking isn't always the
-  // one the user meant, or the full string returns nothing at all.
+  // result (limit=1) and blindly used it - unreliable for longer/less
+  // common names (e.g. "JNTUH University College of Engineering
+  // Mahabubabad"), where the top match by Nominatim's own ranking isn't
+  // always the one the user meant, or the full string returns nothing.
   //
-  // The new flow:
+  // Current flow:
   //   1. Ask Nominatim for several results (limit ~8) instead of one.
   //   2. If the query as typed returns nothing useful, retry with a few
-  //      GENERIC query variants (not tied to any specific place name).
-  //   3. Remove duplicate coordinates from the combined result set.
-  //   4. Let the traveler pick the correct one from a list, instead of
-  //      the app silently guessing.
-  //   5. If nothing useful comes back at all, fall back to letting the
-  //      traveler tap the destination directly on the map.
+  //      GENERIC query variants (not tied to any specific place name):
+  //      the full name, a simplified name with generic institution
+  //      words stripped, the trailing locality words, and a country hint.
+  //   3. Remove duplicate coordinates from the result set.
+  //   4. Let the traveler pick the correct one from a list.
+  //   5. If nothing useful is found at all, show a clear "no match"
+  //      message instead of guessing or falling back to a map tap -
+  //      NAVALERT needs a precise, geocoded destination.
+  //
+  // FRESH-SEARCH SAFETY: every search run is tagged with a generation
+  // number (destinationSearchGeneration). Editing the destination field,
+  // or starting a new search, bumps the generation immediately. Any
+  // in-flight Nominatim request or previously rendered result list
+  // belongs to an older generation and is discarded/ignored as soon as
+  // it resolves, so an old, slow response for "Destination A" can never
+  // overwrite the screen after the traveler has moved on to searching
+  // for "Destination B".
   // ===================================================================
 
   const NOMINATIM_RESULTS_LIMIT = 8;
+
+  // Bumped every time a fresh destination search starts (button press)
+  // or the destination text is edited. Any async work tagged with an
+  // older value than the current one is stale and must be ignored.
+  let destinationSearchGeneration = 0;
+
+  // Editing the destination text always invalidates whatever search is
+  // currently in flight or currently displayed, so the next search
+  // starts completely clean - this is what makes "search A, clear, type
+  // B" behave correctly instead of mixing old and new results.
+  destinationInput.addEventListener('input', function () {
+    destinationSearchGeneration++;
+    destinationResultsList.style.display = 'none';
+    destinationResultsList.innerHTML = '';
+    clearTripError();
+  });
 
   // Builds a small list of query variants to try, in order, stopping as
   // soon as one of them returns results. These are generic text
@@ -1961,36 +1982,50 @@
   // a hospital, or a shop.
   function buildDestinationQueryVariants(rawQuery) {
     const query = rawQuery.trim();
-    const variants = [query]; // always try exactly what the user typed, first
-
-    // Variant: append a country hint. Many local landmarks/institutions
-    // are missing or ambiguous in Nominatim without one, so retrying
-    // with ", India" appended often surfaces a match the bare query did
-    // not. (This app's user base is India-based; it is not tied to any
-    // single destination.)
-    variants.push(query + ', India');
-
     const words = query.split(/\s+/).filter(Boolean);
+    const variants = [];
 
-    // Variant: drop the first word. Handles queries that lead with an
-    // abbreviation/acronym (a university short-code, department name,
-    // etc.) that Nominatim's index does not recognize, while the
-    // remaining words are still enough to find the place.
+    // 1. Exactly what the user typed.
+    variants.push(query);
+
+    // 2. Simplified name: strip generic institution/organisation words
+    // that are often just noise to a geocoder, keeping the distinctive
+    // words (acronyms, proper nouns, locality). This word list is
+    // generic across institution types - it is not specific to any one
+    // place, so it applies the same way to any long organisation name.
+    const GENERIC_INSTITUTION_WORDS = [
+      'university', 'college', 'of', 'engineering', 'institute',
+      'school', 'technology', 'polytechnic', 'campus', 'department'
+    ];
     if (words.length > 2) {
-      variants.push(words.slice(1).join(' '));
+      const simplified = words.filter(function (w) {
+        return GENERIC_INSTITUTION_WORDS.indexOf(w.toLowerCase()) === -1;
+      }).join(' ');
+      if (simplified && simplified.toLowerCase() !== query.toLowerCase()) {
+        variants.push(simplified);
+      }
     }
 
-    // Variant: just the last two words. Long institution names very
-    // often end with the town/area name (e.g. "... College <Town>"), so
-    // narrowing straight to that tail end can succeed where the full
-    // name fails.
+    // 3. Locality-focused: the last two words. Long institution/
+    // organisation names very often end with the town/area name (e.g.
+    // "... Engineering College <Town>"), so narrowing straight to that
+    // tail end can succeed where the full name fails. (Deliberately NOT
+    // narrowing to just the single last word - a lone generic word like
+    // "Station" or "Hospital" is too broad and risks matching an
+    // unrelated place somewhere else entirely.)
     if (words.length > 2) {
       variants.push(words.slice(-2).join(' '));
     }
 
+    // 4. Country hint - retry the original text with ", India" appended,
+    // since many local landmarks/institutions are missing or ambiguous
+    // in Nominatim without one. Applied to every search the same way -
+    // it is not tied to any single destination.
+    variants.push(query + ', India');
+
     // De-duplicate while preserving the try-order above.
     return variants.filter(function (value, index) {
-      return variants.indexOf(value) === index;
+      return value && variants.indexOf(value) === index;
     });
   }
 
@@ -2043,67 +2078,87 @@
   }
 
   // Tries each query variant in turn (sequentially, per Nominatim's
-  // usage policy) until one returns candidates. Returns
-  // { candidates, matchedQuery } - candidates is [] if nothing worked.
-  async function searchDestinationCandidates(rawQuery) {
+  // usage policy) until one returns candidates, ranked in the order
+  // Nominatim itself returned them (its own relevance ranking).
+  // searchId ties this run to a specific destinationSearchGeneration
+  // value - if a newer search starts while a request is in flight, this
+  // bails out immediately instead of issuing further requests or
+  // returning a result for a query the user has already moved on from.
+  async function searchDestinationCandidates(rawQuery, searchId) {
     const variants = buildDestinationQueryVariants(rawQuery);
 
     for (let i = 0; i < variants.length; i++) {
+      if (searchId !== destinationSearchGeneration) {
+        return { candidates: [], stale: true };
+      }
+
       const candidates = await fetchNominatimCandidates(variants[i]);
+
+      if (searchId !== destinationSearchGeneration) {
+        return { candidates: [], stale: true };
+      }
+
       if (candidates.length > 0) {
-        return { candidates: candidates, matchedQuery: variants[i] };
+        return { candidates: candidates, stale: false };
       }
     }
 
-    return { candidates: [], matchedQuery: null };
+    return { candidates: [], stale: false };
   }
 
-  // Renders the candidate list (plus a "pick manually" option) and
-  // resolves the returned Promise with whichever { lat, lon, displayName }
-  // the traveler ends up choosing - either a search result or a point
-  // tapped on the map.
-  function chooseDestination(candidates) {
-    return new Promise(function (resolve) {
-      destinationResultsList.innerHTML = '';
-      destinationResultsList.style.display = 'block';
+  // Renders the candidate list. Always rebuilds the list from scratch
+  // (innerHTML reset) so no stale buttons or duplicate listeners from a
+  // previous search can linger. searchId/pickupSnapshot are captured by
+  // each button's click handler so a click can be traced back to the
+  // exact search it came from and to the pickup coordinates in effect
+  // at that time.
+  function renderDestinationCandidates(candidates, searchId, pickupSnapshot, usingManualPickup) {
+    destinationResultsList.innerHTML = '';
+    destinationResultsList.style.display = 'block';
 
-      candidates.forEach(function (candidate) {
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'destination-result-item';
-        item.textContent = candidate.displayName;
-        item.addEventListener('click', function () {
-          destinationResultsList.style.display = 'none';
-          destinationResultsList.innerHTML = '';
-          resolve(candidate);
-        });
-        destinationResultsList.appendChild(item);
-      });
-
-      const manualPickBtn = document.createElement('button');
-      manualPickBtn.type = 'button';
-      manualPickBtn.className = 'destination-result-item destination-result-manual';
-      manualPickBtn.textContent = '\uD83D\uDCCD None of these - pick destination on the map';
-      manualPickBtn.addEventListener('click', function () {
+    candidates.forEach(function (candidate) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'destination-result-item';
+      item.textContent = candidate.displayName;
+      item.addEventListener('click', function () {
+        // Ignore a click on a list left over from an older search - a
+        // fresh search already clears the list before this point, so
+        // this is just a safety net against any timing edge case.
+        if (searchId !== destinationSearchGeneration) {
+          return;
+        }
         destinationResultsList.style.display = 'none';
         destinationResultsList.innerHTML = '';
-        resolve(null); // null signals "go to manual map pick"
+        finalizeDestinationSelection(candidate, pickupSnapshot, usingManualPickup);
       });
-      destinationResultsList.appendChild(manualPickBtn);
+      destinationResultsList.appendChild(item);
     });
   }
 
-  // Fallback path when search finds nothing useful at all, or the
-  // traveler chooses to bypass the list: shows the (possibly route-less)
-  // map and resolves once they tap a point on it.
-  function pickDestinationOnMap() {
-    ensureMapInitialized();
-    tripResult.textContent = 'Tap a point on the map below to set your destination.';
-    return new Promise(function (resolve) {
-      map.once('click', function (e) {
-        resolve({ lat: e.latlng.lat, lon: e.latlng.lng, displayName: 'Manually selected point' });
-      });
-    });
+  // Called once the traveler taps a specific candidate. Sets the shared
+  // destinationCoords and continues into the existing OSRM route-fetch
+  // flow, exactly as a single-result geocode used to.
+  async function finalizeDestinationSelection(candidate, pickupSnapshot, usingManualPickup) {
+    pickupCoords = pickupSnapshot;
+    destinationCoords = { lat: candidate.lat, lon: candidate.lon };
+
+    geocodeBtn.disabled = true;
+    geocodeBtn.textContent = 'FETCHING ROUTE...';
+
+    const pickupLabel = usingManualPickup ? 'Pickup' : 'Pickup (your location)';
+    tripResult.innerHTML =
+      '<strong>' + pickupLabel + ':</strong> ' + pickupCoords.lat.toFixed(6) + ', ' + pickupCoords.lon.toFixed(6) + '<br>' +
+      '<strong>Destination:</strong> ' + destinationCoords.lat.toFixed(6) + ', ' + destinationCoords.lon.toFixed(6);
+
+    routeFetchResult.textContent = 'Fetching road route...';
+
+    // fetchRouteFromOSRM handles its own errors internally (it reports
+    // them in routeFetchResult), so no extra try/catch is needed here.
+    await fetchRouteFromOSRM(pickupCoords, destinationCoords);
+
+    geocodeBtn.disabled = false;
+    geocodeBtn.textContent = 'SET DESTINATION';
   }
 
   async function handleSetLocations() {
@@ -2130,6 +2185,11 @@
       return;
     }
 
+    // Every fresh search attempt gets its own generation number. This is
+    // what invalidates any earlier in-flight search (see
+    // searchDestinationCandidates/renderDestinationCandidates above).
+    const searchId = ++destinationSearchGeneration;
+
     geocodeBtn.disabled = true;
     geocodeBtn.textContent = 'LOCATING...';
     tripResult.textContent = usingManualPickup ? 'Looking up locations...' : 'Looking up destination...';
@@ -2148,42 +2208,46 @@
         pickupCoords = { lat: pickupResult.lat, lon: pickupResult.lon };
       }
 
-      // ----- 5B: destination search (multiple results, with fallback) -----
-      const searchOutcome = await searchDestinationCandidates(destinationText);
-
-      let chosenDestination;
-      if (searchOutcome.candidates.length === 0) {
-        tripResult.innerHTML =
-          '<span style="color:#f87171;">No matches found for "' + destinationText + '".</span> Pick the destination manually on the map below.';
-        chosenDestination = await pickDestinationOnMap();
-      } else {
-        geocodeBtn.textContent = 'CHOOSE DESTINATION...';
-        tripResult.textContent = 'Multiple matches found - tap the correct destination:';
-        const choice = await chooseDestination(searchOutcome.candidates);
-        chosenDestination = choice !== null ? choice : await pickDestinationOnMap();
+      // A newer search may have started (or the field may have been
+      // edited) while the pickup lookup above was running - bail out
+      // before touching destination search/UI state for this stale run.
+      if (searchId !== destinationSearchGeneration) {
+        return;
       }
 
-      destinationCoords = { lat: chosenDestination.lat, lon: chosenDestination.lon };
+      // ----- 5B: destination search (multiple results, no map fallback) -----
+      const searchOutcome = await searchDestinationCandidates(destinationText, searchId);
 
-      geocodeBtn.textContent = 'FETCHING ROUTE...';
-      const pickupLabel = usingManualPickup ? 'Pickup' : 'Pickup (your location)';
-      tripResult.innerHTML =
-        '<strong>' + pickupLabel + ':</strong> ' + pickupCoords.lat.toFixed(6) + ', ' + pickupCoords.lon.toFixed(6) + '<br>' +
-        '<strong>Destination:</strong> ' + destinationCoords.lat.toFixed(6) + ', ' + destinationCoords.lon.toFixed(6);
+      // If a newer search has since started, this response is stale -
+      // drop it silently and let the newer search's own flow handle the UI.
+      if (searchId !== destinationSearchGeneration) {
+        return;
+      }
 
-      // ----- Stage 3B: fetch the real road route from OSRM -----
-      routeFetchResult.textContent = 'Fetching road route...';
-      await fetchRouteFromOSRM(pickupCoords, destinationCoords);
+      if (searchOutcome.candidates.length === 0) {
+        showTripError('No matching destination found. Try a more specific name or include the city/locality.');
+        tripResult.textContent = 'No trip set up yet.';
+        return;
+      }
+
+      tripResult.textContent = 'Multiple matches found - tap the correct destination:';
+      renderDestinationCandidates(searchOutcome.candidates, searchId, pickupCoords, usingManualPickup);
+      // The rest of the flow (setting destinationCoords and fetching the
+      // route) now continues from finalizeDestinationSelection() once the
+      // traveler taps a result, not from this function.
 
     } catch (err) {
-      showTripError('Something went wrong while looking up locations. Please check your internet connection and try again.');
-      tripResult.textContent = 'No trip set up yet.';
+      if (searchId === destinationSearchGeneration) {
+        showTripError('Something went wrong while looking up locations. Please check your internet connection and try again.');
+        tripResult.textContent = 'No trip set up yet.';
+      }
     } finally {
-      geocodeBtn.disabled = false;
-      geocodeBtn.textContent = 'SET DESTINATION';
+      if (searchId === destinationSearchGeneration) {
+        geocodeBtn.disabled = false;
+        geocodeBtn.textContent = 'SET DESTINATION';
+      }
     }
   }
-
   // ===================================================================
   // STAGE 3B: OSRM road routing
   // Takes pickup/destination coordinates and asks the free public OSRM
