@@ -258,7 +258,6 @@
 
 <div class="app">
 
-
   <!-- ===== Header ===== -->
   <div class="header">
     <h1>ROUTE DEVIATION MONITOR</h1>
@@ -1891,242 +1890,6 @@
     };
   }
 
-  // ===================================================================
-  // 5B: DESTINATION SEARCH (v3 - single best match, no picker UI)
-  //
-  // The traveler only ever sees one outcome: either the destination is
-  // found and the route is generated, or a clear "no match" message is
-  // shown. Internally, several Nominatim candidates are still fetched
-  // and compared, but the app picks the strongest match itself instead
-  // of asking the traveler to choose from a list or tap the map.
-  //
-  // Current flow:
-  //   1. Ask Nominatim for several results (limit ~8) per query variant,
-  //      not just one, so there is something to compare.
-  //   2. Try the query as typed, then a few GENERIC fallback variants
-  //      (not tied to any specific place name): a simplified name with
-  //      generic institution words stripped, the trailing locality
-  //      words, and a country hint.
-  //   3. Remove duplicate coordinates, then score every remaining
-  //      candidate against the original query text (token overlap) and
-  //      Nominatim's own importance ranking.
-  //   4. Keep the single highest-scoring candidate. Stop trying further
-  //      variants as soon as a confidently strong match is found.
-  //   5. If nothing found clears even a minimum relevance bar, show a
-  //      clear "no match" message - never silently pick something
-  //      unrelated, and never fall back to a manual map tap.
-  //
-  // FRESH-SEARCH SAFETY: every search run is tagged with a generation
-  // number (destinationSearchGeneration). Editing the destination field,
-  // or starting a new search, bumps the generation immediately. Any
-  // in-flight Nominatim request from an older generation is discarded as
-  // soon as it resolves, so a slow response for "Destination A" can
-  // never overwrite the screen after the traveler has moved on to
-  // searching for "Destination B".
-  // ===================================================================
-
-  const NOMINATIM_RESULTS_LIMIT = 8;
-
-  // A candidate needs at least this score to be used automatically.
-  // Below this, the match is considered too weak/unrelated to trust.
-  const DESTINATION_MIN_ACCEPTABLE_SCORE = 0.3;
-
-  // A candidate at or above this score is considered a confidently
-  // strong match, so the search stops trying further fallback variants
-  // once one is found (no need to keep querying Nominatim).
-  const DESTINATION_GOOD_ENOUGH_SCORE = 0.6;
-
-  // Bumped every time a fresh destination search starts (button press)
-  // or the destination text is edited. Any async work tagged with an
-  // older value than the current one is stale and must be ignored.
-  let destinationSearchGeneration = 0;
-
-  // Editing the destination text always invalidates whatever search is
-  // currently in flight, so the next search starts completely clean -
-  // this is what makes "search A, clear, type B" behave correctly
-  // instead of an old response overwriting a new one.
-  destinationInput.addEventListener('input', function () {
-    destinationSearchGeneration++;
-    clearTripError();
-  });
-
-  // Builds a small list of query variants to try, in order, stopping as
-  // soon as one of them yields a confidently strong match. These are
-  // generic text transformations - none of them are specific to any one
-  // place name, so the same logic applies equally to a college, a
-  // railway station, a hospital, or a shop.
-  function buildDestinationQueryVariants(rawQuery) {
-    const query = rawQuery.trim();
-    const words = query.split(/\s+/).filter(Boolean);
-    const variants = [];
-
-    // 1. Exactly what the user typed.
-    variants.push(query);
-
-    // 2. Simplified name: strip generic institution/organisation words
-    // that are often just noise to a geocoder, keeping the distinctive
-    // words (acronyms, proper nouns, locality). This word list is
-    // generic across institution types - it is not specific to any one
-    // place, so it applies the same way to any long organisation name.
-    const GENERIC_INSTITUTION_WORDS = [
-      'university', 'college', 'of', 'engineering', 'institute',
-      'school', 'technology', 'polytechnic', 'campus', 'department'
-    ];
-    if (words.length > 2) {
-      const simplified = words.filter(function (w) {
-        return GENERIC_INSTITUTION_WORDS.indexOf(w.toLowerCase()) === -1;
-      }).join(' ');
-      if (simplified && simplified.toLowerCase() !== query.toLowerCase()) {
-        variants.push(simplified);
-      }
-    }
-
-    // 3. Locality-focused: the last two words. Long institution/
-    // organisation names very often end with the town/area name (e.g.
-    // "... Engineering College <Town>"), so narrowing straight to that
-    // tail end can succeed where the full name fails. (Deliberately NOT
-    // narrowing to just the single last word - a lone generic word like
-    // "Station" or "Hospital" is too broad and risks matching an
-    // unrelated place somewhere else entirely.)
-    if (words.length > 2) {
-      variants.push(words.slice(-2).join(' '));
-    }
-
-    // 4. Country hint - retry the original text with ", India" appended,
-    // since many local landmarks/institutions are missing or ambiguous
-    // in Nominatim without one. Applied to every search the same way -
-    // it is not tied to any single destination.
-    variants.push(query + ', India');
-
-    // De-duplicate while preserving the try-order above.
-    return variants.filter(function (value, index) {
-      return value && variants.indexOf(value) === index;
-    });
-  }
-
-  // Removes results that resolve to (essentially) the same coordinates -
-  // Nominatim sometimes returns the same real-world place more than once
-  // from different data sources. Keeps `importance` (Nominatim's own
-  // 0-1 relevance score) since the ranking step below uses it.
-  function dedupeGeocodeResults(rawResults) {
-    const seen = new Set();
-    const deduped = [];
-
-    for (let i = 0; i < rawResults.length; i++) {
-      const lat = parseFloat(rawResults[i].lat);
-      const lon = parseFloat(rawResults[i].lon);
-      if (isNaN(lat) || isNaN(lon)) {
-        continue;
-      }
-      // Round to 5 decimal places (~1 metre) so near-identical
-      // coordinates are treated as the same place.
-      const key = lat.toFixed(5) + ',' + lon.toFixed(5);
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      deduped.push({
-        lat: lat,
-        lon: lon,
-        displayName: rawResults[i].display_name,
-        importance: typeof rawResults[i].importance === 'number' ? rawResults[i].importance : 0
-      });
-    }
-
-    return deduped;
-  }
-
-  // Single Nominatim request for a given query string, returning a
-  // deduplicated array of candidates (possibly empty).
-  async function fetchNominatimCandidates(query) {
-    const url =
-      'https://nominatim.openstreetmap.org/search?format=json&limit=' +
-      NOMINATIM_RESULTS_LIMIT + '&q=' + encodeURIComponent(query);
-
-    const response = await fetch(url, {
-      headers: {
-        // Nominatim's usage policy asks clients to identify themselves.
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error('Geocoding request failed (' + response.status + ')');
-    }
-
-    const results = await response.json();
-    return dedupeGeocodeResults(results || []);
-  }
-
-  // Splits text into lowercase word tokens for simple relevance scoring.
-  function tokenizeForMatching(text) {
-    return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  }
-
-  // Scores how well a candidate matches what the traveler actually typed:
-  // mostly the fraction of the original query's words that appear in the
-  // candidate's full address (display_name), with Nominatim's own
-  // importance score as a smaller secondary signal (so, between two
-  // similarly-matching candidates, the more generally significant place
-  // wins, but keyword relevance always dominates).
-  function scoreDestinationCandidate(candidate, queryTokens) {
-    if (queryTokens.length === 0) {
-      return 0;
-    }
-    const nameTokens = new Set(tokenizeForMatching(candidate.displayName));
-    let matched = 0;
-    for (let i = 0; i < queryTokens.length; i++) {
-      if (nameTokens.has(queryTokens[i])) {
-        matched++;
-      }
-    }
-    const tokenOverlap = matched / queryTokens.length;
-    return tokenOverlap * 0.85 + candidate.importance * 0.15;
-  }
-
-  // Tries each query variant in turn (sequentially, per Nominatim's
-  // usage policy), scores every candidate seen so far, and keeps the
-  // single best one. Stops early once a confidently strong match is
-  // found. searchId ties this run to a specific destinationSearchGeneration
-  // value - if a newer search starts while a request is in flight, this
-  // bails out immediately instead of issuing further requests or
-  // returning a result for a query the user has already moved on from.
-  async function findBestDestinationMatch(rawQuery, searchId) {
-    const variants = buildDestinationQueryVariants(rawQuery);
-    const queryTokens = tokenizeForMatching(rawQuery);
-
-    let best = null; // { lat, lon, score }
-
-    for (let i = 0; i < variants.length; i++) {
-      if (searchId !== destinationSearchGeneration) {
-        return { match: null, stale: true };
-      }
-
-      const candidates = await fetchNominatimCandidates(variants[i]);
-
-      if (searchId !== destinationSearchGeneration) {
-        return { match: null, stale: true };
-      }
-
-      for (let c = 0; c < candidates.length; c++) {
-        const score = scoreDestinationCandidate(candidates[c], queryTokens);
-        if (best === null || score > best.score) {
-          best = { lat: candidates[c].lat, lon: candidates[c].lon, score: score };
-        }
-      }
-
-      if (best !== null && best.score >= DESTINATION_GOOD_ENOUGH_SCORE) {
-        break; // strong match already found - no need to try more variants
-      }
-    }
-
-    if (best === null || best.score < DESTINATION_MIN_ACCEPTABLE_SCORE) {
-      return { match: null, stale: false };
-    }
-
-    return { match: { lat: best.lat, lon: best.lon }, stale: false };
-  }
-
   async function handleSetLocations() {
     const destinationText = destinationInput.value.trim();
     const usingManualPickup = pickupModeManual.checked;
@@ -2149,11 +1912,6 @@
       return;
     }
 
-    // Every fresh search attempt gets its own generation number. This is
-    // what invalidates any earlier in-flight search (see
-    // findBestDestinationMatch above).
-    const searchId = ++destinationSearchGeneration;
-
     geocodeBtn.disabled = true;
     geocodeBtn.textContent = 'LOCATING...';
     tripResult.textContent = usingManualPickup ? 'Looking up locations...' : 'Looking up destination...';
@@ -2172,29 +1930,14 @@
         pickupCoords = { lat: pickupResult.lat, lon: pickupResult.lon };
       }
 
-      // A newer search may have started (or the field may have been
-      // edited) while the pickup lookup above was running - bail out
-      // before touching destination search/UI state for this stale run.
-      if (searchId !== destinationSearchGeneration) {
-        return;
-      }
-
-      // ----- 5B: destination search (auto-ranked, single best match) -----
-      const searchOutcome = await findBestDestinationMatch(destinationText, searchId);
-
-      // If a newer search has since started, this response is stale -
-      // drop it silently and let the newer search's own flow handle the UI.
-      if (searchId !== destinationSearchGeneration) {
-        return;
-      }
-
-      if (searchOutcome.match === null) {
-        showTripError('No matching destination found. Try a more specific name or include the city/locality.');
+      const destinationResult = await geocodePlace(destinationText);
+      if (!destinationResult) {
+        showTripError('Could not find destination: "' + destinationText + '"');
         tripResult.textContent = 'No trip set up yet.';
         return;
       }
 
-      destinationCoords = { lat: searchOutcome.match.lat, lon: searchOutcome.match.lon };
+      destinationCoords = { lat: destinationResult.lat, lon: destinationResult.lon };
 
       const pickupLabel = usingManualPickup ? 'Pickup' : 'Pickup (your location)';
       tripResult.innerHTML =
@@ -2206,17 +1949,14 @@
       await fetchRouteFromOSRM(pickupCoords, destinationCoords);
 
     } catch (err) {
-      if (searchId === destinationSearchGeneration) {
-        showTripError('Something went wrong while looking up locations. Please check your internet connection and try again.');
-        tripResult.textContent = 'No trip set up yet.';
-      }
+      showTripError('Something went wrong while looking up locations. Please check your internet connection and try again.');
+      tripResult.textContent = 'No trip set up yet.';
     } finally {
-      if (searchId === destinationSearchGeneration) {
-        geocodeBtn.disabled = false;
-        geocodeBtn.textContent = 'SET DESTINATION';
-      }
+      geocodeBtn.disabled = false;
+      geocodeBtn.textContent = 'SET DESTINATION';
     }
   }
+
   // ===================================================================
   // STAGE 3B: OSRM road routing
   // Takes pickup/destination coordinates and asks the free public OSRM
@@ -2227,49 +1967,14 @@
   // No map is drawn yet - that's Stage 3C.
   // ===================================================================
 
-  // ----- 5C: pick the best route out of OSRM's alternatives -----
-  // Given the array of routes OSRM returned, decide which one to actually
-  // use for navigation/deviation-detection:
-  //   - Find the fastest route (lowest duration) and the shortest route
-  //     (lowest distance).
-  //   - If the shortest route's travel time is still reasonably close to
-  //     the fastest one's (within ROUTE_TIME_TOLERANCE), prefer the
-  //     shorter route - a marginally slower but meaningfully shorter
-  //     path is usually the more sensible pick for a monitored trip.
-  //   - Otherwise, just go with the fastest route.
-  const ROUTE_TIME_TOLERANCE = 1.15; // shortest route may be up to 15% slower
-
-  function selectBestRoute(routes) {
-    let fastest = routes[0];
-    let shortest = routes[0];
-
-    for (let i = 1; i < routes.length; i++) {
-      if (routes[i].duration < fastest.duration) {
-        fastest = routes[i];
-      }
-      if (routes[i].distance < shortest.distance) {
-        shortest = routes[i];
-      }
-    }
-
-    if (shortest !== fastest && shortest.duration <= fastest.duration * ROUTE_TIME_TOLERANCE) {
-      return { chosen: shortest, preferredShorter: true };
-    }
-
-    return { chosen: fastest, preferredShorter: false };
-  }
-
   async function fetchRouteFromOSRM(pickup, destination) {
     // OSRM expects coordinates as lon,lat (opposite order from what we store)
     const coordsParam =
       pickup.lon + ',' + pickup.lat + ';' + destination.lon + ',' + destination.lat;
 
-    // alternatives=true asks OSRM for more than one route candidate when
-    // available; overview=full + geometries=geojson are unchanged since
-    // the deviation-detection algorithm needs the full route geometry.
     const url =
       'https://router.project-osrm.org/route/v1/driving/' + coordsParam +
-      '?overview=full&geometries=geojson&alternatives=true';
+      '?overview=full&geometries=geojson';
 
     try {
       const response = await fetch(url);
@@ -2286,13 +1991,8 @@
         return;
       }
 
-      // Pick the best route out of whatever OSRM returned (1 route if no
-      // alternative existed, more if it did).
-      const selection = selectBestRoute(data.routes);
-      const chosenRoute = selection.chosen;
-
       // GeoJSON coordinates come back as [lon, lat] pairs, in road order.
-      const coordinates = chosenRoute.geometry.coordinates;
+      const coordinates = data.routes[0].geometry.coordinates;
 
       // Convert to our internal {lat, lon} waypoint format and replace
       // the route used by the deviation algorithm.
@@ -2300,19 +2000,12 @@
         return { lat: pair[1], lon: pair[0] };
       });
 
-      const distanceKm = (chosenRoute.distance / 1000).toFixed(2);
-      const durationMin = (chosenRoute.duration / 60).toFixed(1);
+      const distanceKm = (data.routes[0].distance / 1000).toFixed(2);
+      const durationMin = (data.routes[0].duration / 60).toFixed(1);
 
-      let routeInfoHtml =
+      routeFetchResult.innerHTML =
         '<span style="color:#4ade80;">Road route loaded:</span> ' + distanceKm + ' km, ~' + durationMin + ' min<br>' +
         '<span style="color:#5a6070;">' + routeWaypoints.length + ' route points now used for deviation detection.</span>';
-
-      if (data.routes.length > 1) {
-        routeInfoHtml += '<br><span style="color:#5a6070;">' + data.routes.length + ' route option(s) considered - selected the ' +
-          (selection.preferredShorter ? 'shorter route (similar travel time to the fastest).' : 'fastest route.') + '</span>';
-      }
-
-      routeFetchResult.innerHTML = routeInfoHtml;
 
       // Stage 3C: draw the route, pickup, and destination on the live map.
       drawRouteOnMap(pickup, destination, routeWaypoints);
