@@ -3,68 +3,346 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Observer Dashboard</title>
+<title>NavAlert — Observer Dashboard</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0f1115">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<meta name="theme-color" content="#f8fafc">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
-  /* Styling intentionally mirrors route_monitor.html for a consistent look */
-  * {
+  /* ===================================================================
+     NAVALERT REFINED DESIGN SYSTEM - OBSERVER DASHBOARD
+     Palette: Deep Navy / Soft Cool White / Slate Gray / Refined Cobalt
+     Values: Trust • Reliability • Calm • Precision • Technology
+     =================================================================== */
+  :root {
+    --bg-page: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-card-subtle: #f1f5f9;
+    --bg-input: #f8fafc;
+    --bg-pill: #e2e8f0;
+
+    --border-card: #e2e8f0;
+    --border-subtle: #edf2f7;
+    --border-input: #cbd5e1;
+    --border-focus: #2563eb;
+
+    --text-navy: #0f172a;
+    --text-slate: #475569;
+    --text-muted: #64748b;
+
+    --accent-cobalt: #1d4ed8;
+    --accent-cobalt-hover: #1e40af;
+    --accent-tint: #eff6ff;
+    --accent-border: #bfdbfe;
+
+    --color-green: #059669;
+    --color-green-bg: #ecfdf5;
+    --color-green-border: #a7f3d0;
+
+    --color-amber: #d97706;
+    --color-amber-bg: #fffbeb;
+    --color-amber-border: #fde68a;
+
+    --color-red: #dc2626;
+    --color-red-bg: #fef2f2;
+    --color-red-border: #fecaca;
+
+    --color-cyan: #0284c7;
+
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', Consolas, monospace;
+
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-full: 9999px;
+
+    --shadow-subtle: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+    --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+    --shadow-btn: 0 2px 8px rgba(29, 78, 216, 0.2);
+
+    --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background-color: #0f1115;
-    color: #eaeaea;
+    font-family: var(--font-sans);
+    background-color: var(--bg-page);
+    color: var(--text-navy);
     min-height: 100vh;
     display: flex;
     justify-content: center;
-    padding: 16px;
+    padding: 20px 14px 48px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
 
-  .app {
+  .nav-container {
     width: 100%;
-    max-width: 460px;
+    max-width: 480px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
   }
 
-  .header {
-    text-align: center;
-    padding: 18px 10px 4px;
+  /* Header Branding */
+  .nav-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 2px 2px;
   }
 
-  .header h1 {
-    font-size: 19px;
-    letter-spacing: 0.5px;
-    color: #ffffff;
+  .brand-group {
+    display: flex;
+    flex-direction: column;
   }
 
-  .header p {
-    font-size: 12.5px;
-    color: #9aa0aa;
-    margin-top: 4px;
+  .brand-name {
+    font-size: 21px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--text-navy);
   }
 
+  .brand-tagline {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  /* Sync Chip */
+  .sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-slate);
+    box-shadow: var(--shadow-subtle);
+  }
+
+  /* Cards */
   .card {
-    background-color: #1a1d24;
-    border: 1px solid #23262e;
-    border-radius: 12px;
-    padding: 16px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-header {
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .card-title {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: #9aa0aa;
-    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-navy);
+    letter-spacing: -0.2px;
   }
 
+  .card-subtitle {
+    font-size: 12.5px;
+    color: var(--text-slate);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  /* Inputs */
+  .input-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .input-group label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 12px 14px;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-input);
+    border-radius: var(--radius-md);
+    color: var(--text-navy);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    transition: all var(--transition);
+  }
+
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    background-color: #ffffff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+
+  input[type="text"]::placeholder {
+    color: #94a3b8;
+  }
+
+  #tripPinInput {
+    font-family: var(--font-mono);
+    letter-spacing: 3px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-cobalt);
+  }
+
+  /* Buttons */
+  button {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    user-select: none;
+  }
+
+  button:active:not(:disabled) {
+    transform: scale(0.985);
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  #monitorBtn {
+    width: 100%;
+    background-color: var(--accent-cobalt);
+    color: #ffffff;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    box-shadow: var(--shadow-btn);
+  }
+
+  #monitorBtn:hover:not(:disabled) {
+    background-color: var(--accent-cobalt-hover);
+    box-shadow: 0 4px 14px rgba(29, 78, 216, 0.28);
+  }
+
+  /* Trip Error Display */
+  .trip-error {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background-color: var(--color-red-bg);
+    border: 1px solid var(--color-red-border);
+    color: var(--color-red);
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    display: none;
+    line-height: 1.4;
+  }
+
+  /* Deviation Alert Banner (Red only for confirmed alerts) */
+  #deviationAlertBanner {
+    display: none;
+    background-color: var(--color-red-bg);
+    border: 1px solid var(--color-red-border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 10px rgba(220, 38, 38, 0.1);
+  }
+
+  #deviationAlertTitle {
+    font-size: 14px;
+    font-weight: 700;
+    color: #991b1b;
+  }
+
+  .alert-sub {
+    font-size: 12px;
+    color: var(--color-red);
+    margin-top: 2px;
+  }
+
+  /* Map Card & Presentation */
+  .map-frame {
+    position: relative;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border-card);
+    background-color: var(--bg-card-subtle);
+  }
+
+  #mapContainer {
+    height: 340px;
+    width: 100%;
+    border-radius: var(--radius-md);
+  }
+
+  .map-empty-message {
+    height: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 24px;
+    background: #f8fafc;
+  }
+
+  .map-empty-message .pin {
+    font-size: 32px;
+    color: var(--text-muted);
+  }
+
+  .map-empty-message .label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-navy);
+  }
+
+  .map-empty-message .sublabel {
+    font-size: 12px;
+    color: var(--text-muted);
+    max-width: 250px;
+  }
+
+  /* Telemetry Tile Component */
+  .telemetry-tile {
+    background: var(--bg-card-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+  }
+
+  /* Status Indicators */
   .status-row {
     display: flex;
     align-items: center;
@@ -74,7 +352,7 @@
   .status-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   .dot {
@@ -82,262 +360,306 @@
     height: 9px;
     border-radius: 50%;
     flex-shrink: 0;
+    transition: all var(--transition);
   }
 
-  .dot-waiting   { background-color: #6b7280; }
-  .dot-active    { background-color: #4ade80; }
-  .dot-error     { background-color: #f87171; }
-  .dot-notstarted{ background-color: #6b7280; }
-  .dot-onroute   { background-color: #4ade80; }
-  .dot-deviated  { background-color: #f87171; }
-  .dot-reached   { background-color: #60a5fa; }
+  .dot-waiting    { background-color: var(--text-muted); }
+  .dot-active     { background-color: var(--color-green); box-shadow: 0 0 0 3px var(--color-green-bg); }
+  .dot-error      { background-color: var(--color-red); box-shadow: 0 0 0 3px var(--color-red-bg); }
+  .dot-notstarted { background-color: var(--text-muted); }
+  .dot-onroute    { background-color: var(--color-green); box-shadow: 0 0 0 3px var(--color-green-bg); }
+  .dot-reached    { background-color: var(--color-cyan); box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15); }
+  .dot-deviated   { background-color: var(--color-red); box-shadow: 0 0 0 4px var(--color-red-bg); animation: pulse 1.5s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.15); }
+  }
 
   .status-label {
     font-size: 14.5px;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--text-navy);
   }
 
   .status-sub {
     font-size: 12px;
-    color: #9aa0aa;
+    color: var(--text-slate);
     margin-top: 6px;
-    line-height: 1.6;
+    line-height: 1.5;
   }
 
-  .footer-note {
+  .footer-text {
     text-align: center;
-    font-size: 11px;
-    color: #4b5060;
-    padding: 6px 0 4px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    padding: 6px 0;
   }
 
-  #mapContainer {
-    height: 260px;
-    border-radius: 10px;
+  /* MapLibre GL JS Controls & Modern Markers */
+  .maplibregl-map {
+    font-family: var(--font-sans);
+  }
+
+  .maplibregl-ctrl-group {
+    background: #ffffff !important;
+    border: 1px solid var(--border-card) !important;
+    border-radius: var(--radius-sm) !important;
+    box-shadow: var(--shadow-subtle) !important;
     overflow: hidden;
   }
 
-  .map-empty-message {
-    height: 260px;
-    border-radius: 10px;
-    background:
-      repeating-linear-gradient(
-        45deg,
-        #1e222a,
-        #1e222a 10px,
-        #191c23 10px,
-        #191c23 20px
-      );
-    border: 1px dashed #33384280;
-    display: flex;
-    flex-direction: column;
+  .maplibregl-ctrl-group button {
+    border-bottom: 1px solid var(--border-subtle) !important;
+    width: 30px !important;
+    height: 30px !important;
+  }
+
+  .maplibregl-ctrl-group button:last-child {
+    border-bottom: none !important;
+  }
+
+  .maplibregl-ctrl-attrib {
+    font-size: 10px !important;
+    background-color: rgba(255, 255, 255, 0.85) !important;
+    border-top-left-radius: 4px;
+    padding: 2px 6px !important;
+  }
+
+  /* Recenter Control Button */
+  .map-ctrl-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+    width: 34px;
+    height: 34px;
+    background: #ffffff;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-sm);
+    color: var(--text-navy);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+    display: none;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    color: #6b7280;
-    text-align: center;
-    padding: 12px;
-  }
-
-  .map-empty-message .pin {
-    font-size: 26px;
-  }
-
-  .map-empty-message .label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #9aa0aa;
-  }
-
-  .map-empty-message .sublabel {
-    font-size: 11px;
-    color: #5a6070;
-  }
-
-  .error-message {
-    margin-top: 12px;
-    padding: 10px;
-    background-color: #3a1919;
-    color: #f87171;
-    border-radius: 8px;
-    font-size: 13px;
-    display: none;
-  }
-
-  /* ===== Trip Entry form (Stage 4D) ===== */
-  .field-group {
-    margin-bottom: 12px;
-  }
-
-  .field-group label {
-    display: block;
-    font-size: 12px;
-    color: #9aa0aa;
-    margin-bottom: 6px;
-  }
-
-  .field-group input {
-    width: 100%;
-    padding: 11px 12px;
-    background-color: #12141a;
-    border: 1px solid #2a2d35;
-    border-radius: 8px;
-    color: #eaeaea;
-    font-size: 14px;
-  }
-
-  .field-group input:focus {
-    outline: none;
-    border-color: #4b5563;
-  }
-
-  #monitorBtn {
-    width: 100%;
-    background-color: #2563eb;
-    color: #ffffff;
-    padding: 13px;
-    font-size: 14px;
-    font-weight: bold;
-    border: none;
-    border-radius: 10px;
     cursor: pointer;
-    margin-top: 4px;
+    transition: all var(--transition);
   }
 
-  #monitorBtn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .map-ctrl-btn:hover {
+    background: var(--bg-card-subtle);
+    color: var(--accent-cobalt);
+    transform: scale(1.05);
   }
 
-  .trip-error {
-    margin-top: 10px;
-    font-size: 12px;
-    color: #f87171;
-    display: none;
+  /* Modern Navigation Markers */
+  .live-pulse-marker {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+  }
+
+  .pulse-ring {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(5, 150, 105, 0.25);
+    animation: pulse-wave 2s infinite cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  .live-pulse-marker.deviated .pulse-ring {
+    background: rgba(220, 38, 38, 0.35);
+  }
+
+  .pulse-dot {
+    position: relative;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: var(--color-green);
+    border: 2.5px solid #ffffff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: background-color 300ms ease;
+  }
+
+  .live-pulse-marker.deviated .pulse-dot {
+    background-color: var(--color-red);
+  }
+
+  @keyframes pulse-wave {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+
+  .map-marker-pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 800;
+    color: #ffffff;
+    cursor: pointer;
+  }
+
+  .map-marker-pin.origin {
+    background-color: var(--color-green);
+  }
+
+  .map-marker-pin.destination {
+    background-color: var(--accent-cobalt);
   }
 </style>
 </head>
 <body>
 
-<div class="app">
+<main class="nav-container">
 
-  <div class="header">
-    <h1>OBSERVER DASHBOARD</h1>
-    <p>Live Trip Monitoring (Read-Only)</p>
-  </div>
+  <!-- Header -->
+  <header class="nav-header">
+    <div class="brand-group">
+      <h1 class="brand-name">NAVALERT</h1>
+      <span class="brand-tagline">Observer Dashboard</span>
+    </div>
+    
+    <div class="sync-badge" title="Cloud Synchronization">
+      <span class="dot dot-waiting" id="firebaseDot"></span>
+      <span id="firebaseLabel">Connecting</span>
+    </div>
+  </header>
 
-  <!-- ===== Cloud Sync Status ===== -->
-  <div class="card">
-    <div class="card-title">Cloud Sync Status</div>
-    <div class="status-row">
-      <div class="status-left">
-        <span class="dot dot-waiting" id="firebaseDot"></span>
-        <span class="status-label" id="firebaseLabel">Connecting...</span>
+  <!-- 01 TRIP ENTRY CARD -->
+  <section class="card" id="tripEntryCard">
+    <div class="card-header">
+      <h2 class="card-title">Monitor a journey</h2>
+    </div>
+    <p class="card-subtitle">
+      Enter the Trip ID and PIN provided by the traveler to view live position and route deviation alerts.
+    </p>
+
+    <div class="input-stack">
+      <div class="input-group">
+        <label for="tripIdInput">Trip ID</label>
+        <input type="text" id="tripIdInput" placeholder="e.g. 8f4c2a91-7d3e-4c...">
+      </div>
+
+      <div class="input-group">
+        <label for="tripPinInput">PIN</label>
+        <input type="text" id="tripPinInput" placeholder="6-digit PIN" maxlength="6" inputmode="numeric">
       </div>
     </div>
-    <div class="status-sub" id="firebaseSub">Initializing Firebase Realtime Database connection.</div>
-  </div>
 
-  <!-- ===== Trip Entry Card (Stage 4D) ===== -->
-  <div class="card" id="tripEntryCard">
-    <div class="card-title">Trip Monitoring</div>
-
-    <div class="field-group">
-      <label for="tripIdInput">Trip ID</label>
-      <input type="text" id="tripIdInput" placeholder="e.g. 8f4c2a91-7d3e-4c...">
+    <div class="status-sub" id="pushStatusText" style="margin-bottom:14px; font-size:11.5px;">
+      Push notifications will be requested upon monitoring.
     </div>
 
-    <div class="field-group">
-      <label for="tripPinInput">PIN</label>
-      <input type="text" id="tripPinInput" placeholder="6-digit PIN" maxlength="6" inputmode="numeric">
-    </div>
-
-    <div class="field-group">
-      <label>Notifications</label>
-      <div class="status-sub" id="pushStatusText" style="margin-top:0;">Push notifications will be requested when you tap MONITOR TRIP.</div>
-    </div>
-
-    <button id="monitorBtn">MONITOR TRIP</button>
+    <button id="monitorBtn" type="button">MONITOR TRIP</button>
 
     <div class="trip-error" id="tripEntryError"></div>
-  </div>
+  </section>
 
-  <!-- ===== Dashboard (hidden until a trip is successfully joined) ===== -->
-  <div id="dashboardContainer" style="display:none;">
+  <!-- 02 ACTIVE JOURNEY DASHBOARD (Prioritizing Live map, Journey status, Distance, Last update, Alerts) -->
+  <div id="dashboardContainer" style="display:none; flex-direction:column; gap:16px;">
 
-    <!-- ===== Live Map ===== -->
-    <div class="card">
-      <div class="card-title">Traveler Position</div>
-      <div id="mapContainer" style="display:none;"></div>
-      <div class="map-empty-message" id="mapEmptyMessage">
-        <div class="pin">📍</div>
-        <div class="label">Waiting for trip data</div>
-        <div class="sublabel">Map appears once route/location data arrives from the traveler.</div>
-      </div>
-    </div>
-
-    <!-- ===== GPS Status ===== -->
-    <div class="card">
-      <div class="card-title">Traveler GPS</div>
-      <div class="status-row">
-        <div class="status-left">
-          <span class="dot dot-waiting" id="gpsDot"></span>
-          <span class="status-label" id="gpsLabel">No data yet</span>
-        </div>
-      </div>
-      <div class="status-sub" id="gpsSub">Latitude: -- &nbsp; Longitude: -- &nbsp; Accuracy: --</div>
-    </div>
-
-    <!-- ===== Sustained Deviation Alert Banner (Stage 5C/5D) ===== -->
-    <!-- Hidden by default; shown only when data.route.alertActive is true.
-         Title text is set dynamically to show severity + alert count,
-         e.g. "Severe Route Deviation - Alert #4" -->
-    <div id="deviationAlertBanner" style="display:none; background-color:#3a1919; border:1px solid #f87171; border-radius:12px; padding:14px 16px; align-items:center; gap:10px;">
-      <span style="font-size:20px;">⚠️</span>
+    <!-- Alerts: Sustained Deviation Alert Banner -->
+    <div id="deviationAlertBanner" role="alert">
+      <span style="font-size:20px; line-height:1;">⚠️</span>
       <div>
-        <div style="font-size:14px; font-weight:700; color:#f87171;" id="deviationAlertTitle">Sustained Deviation Alert</div>
-        <div style="font-size:12px; color:#f2a9a9; margin-top:2px;">Traveler has remained off-route for an extended period.</div>
-      </div>
-    </div>
-
-    <!-- ===== Route Status ===== -->
-    <div class="card">
-      <div class="card-title">Route Status</div>
-      <div class="status-row">
-        <div class="status-left">
-          <span class="dot dot-notstarted" id="routeDot"></span>
-          <span class="status-label" id="routeLabel">Not Started</span>
+        <div id="deviationAlertTitle">Sustained Deviation Alert</div>
+        <div class="alert-sub">
+          Traveler has remained off-route for an extended period.
         </div>
       </div>
-      <div class="status-sub" id="routeSub">Distance from route: -- &nbsp; | &nbsp; Distance to destination: --</div>
     </div>
 
-    <!-- ===== Last Update ===== -->
-    <div class="card">
-      <div class="card-title">Last Update</div>
-      <div class="status-sub" id="lastUpdateText" style="margin-top:0;">No updates received yet.</div>
-    </div>
+    <!-- Live Map Card -->
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title">Live map</h2>
+      </div>
+      <div class="map-frame">
+        <div id="mapContainer" style="display:none;"></div>
+        <button type="button" class="map-ctrl-btn" id="recenterBtn" title="Recenter on live position" aria-label="Recenter on live position" style="display:none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="7"></circle>
+            <polyline points="12 2 12 5"></polyline>
+            <polyline points="12 19 12 22"></polyline>
+            <polyline points="2 12 5 12"></polyline>
+            <polyline points="19 12 22 12"></polyline>
+            <circle cx="12" cy="12" r="2" fill="currentColor"></circle>
+          </svg>
+        </button>
+        <div class="map-empty-message" id="mapEmptyMessage">
+          <div class="pin">📍</div>
+          <div class="label">Waiting for trip data</div>
+          <div class="sublabel">Live road route and location appear once traveler starts moving.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Journey Status & Distance Card -->
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title">Journey status</h2>
+      </div>
+
+      <!-- Route Status -->
+      <div class="telemetry-tile">
+        <div class="status-row">
+          <div class="status-left">
+            <span class="dot dot-notstarted" id="routeDot"></span>
+            <span class="status-label" id="routeLabel">Not Started</span>
+          </div>
+        </div>
+        <div class="status-sub" id="routeSub">
+          Off-route: -- &nbsp;|&nbsp; To destination: --
+        </div>
+      </div>
+
+      <!-- Traveler GPS Telemetry -->
+      <div class="telemetry-tile" style="margin-top:10px;">
+        <div class="status-row">
+          <div class="status-left">
+            <span class="dot dot-waiting" id="gpsDot"></span>
+            <span class="status-label" id="gpsLabel">No data yet</span>
+          </div>
+        </div>
+        <div class="status-sub" id="gpsSub">Accuracy: -- &bull; Lat: -- &bull; Lon: --</div>
+      </div>
+
+      <!-- Last Update -->
+      <div class="status-sub" id="lastUpdateText" style="border-top:1px solid var(--border-card); padding-top:10px; margin-top:12px; font-size:11.5px; color:var(--text-muted);">
+        No updates received yet.
+      </div>
+    </section>
 
   </div>
 
-  <div class="error-message" id="errorBox"></div>
+  <!-- Hidden Firebase status message subtext needed by JS -->
+  <div id="firebaseSub" style="display:none;"></div>
+  <div class="trip-error" id="errorBox"></div>
 
-  <div class="footer-note">Enter Trip ID + PIN to monitor a trip. Shows planned route (blue) and actual traveled path (red dashed). Read-only.</div>
+  <footer class="footer-text">
+    NAVALERT &bull; Observer Dashboard &bull; Live Telemetry Tracking
+  </footer>
 
-</div>
+</main>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
 <!-- ===================================================================
-     STAGE 4D: Observer dashboard with Trip ID + PIN entry.
-     This page is READ-ONLY. It does not calculate deviation, geofencing,
-     or routing itself - it listens to 'trips/<tripId>/<pin>', the same
-     path route_monitor.html (the traveler app) writes to for that
-     specific trip, and displays whatever it finds there. All
-     "intelligence" stays on the traveler's device, per the locked
-     architecture decision. Trip ID + PIN together act as a shared
-     access token - not full authentication - as discussed and agreed.
+     STAGE 4D: Observer dashboard logic & Web Push registration.
+     Preserved intact for strict functional compatibility.
      ==================================================================== -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
@@ -348,8 +670,6 @@
     update
   } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
 
-  // Same Firebase project as route_monitor.html - both files must point
-  // at the same project so the observer reads what the traveler writes.
   const firebaseConfig = {
     apiKey: "AIzaSyCjsfXED3CN07XjWXAhUNSzMm4TpGU9c1U",
     authDomain: "intelligent-route-monitor.firebaseapp.com",
@@ -361,7 +681,6 @@
     measurementId: "G-7B978MHT79"
   };
 
-  // ----- Element references -----
   const firebaseDot = document.getElementById('firebaseDot');
   const firebaseLabel = document.getElementById('firebaseLabel');
   const firebaseSub = document.getElementById('firebaseSub');
@@ -383,27 +702,18 @@
   const errorBox = document.getElementById('errorBox');
 
   function setFirebaseStatus(dotClass, labelText, subText) {
-    firebaseDot.className = 'dot ' + dotClass;
-    firebaseLabel.textContent = labelText;
-    firebaseSub.textContent = subText;
+    if (firebaseDot) firebaseDot.className = 'dot ' + dotClass;
+    if (firebaseLabel) firebaseLabel.textContent = labelText;
+    if (firebaseSub) firebaseSub.textContent = subText;
   }
 
   function showError(message) {
-    errorBox.style.display = 'block';
-    errorBox.textContent = message;
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = message;
+    }
   }
 
-  // ===================================================================
-  // WEB PUSH: replaces the old email-based alert flow. Instead of
-  // collecting an email address, we register a Service Worker, ask for
-  // notification permission, subscribe to Web Push, and store the
-  // resulting subscription object at trips/<tripId>/<pin>/pushSubscription
-  // - the same RTDB path route_monitor.html already reads/writes to.
-  // A Vercel function (outside this file) reads that subscription and
-  // sends the actual push when a deviation alert fires.
-  // ===================================================================
-
-  // Replace with the VAPID public key generated via `web-push generate-vapid-keys`.
   const VAPID_PUBLIC_KEY = 'BJeocnbG6f3URWxXrQKxgmYp7qmW3WAhtY1g4YaFQ0laoD7bvnlcs6TgZIKCHC3C7EGj-RRxdvPlqisfHfm54OY';
 
   function urlBase64ToUint8Array(base64String) {
@@ -423,14 +733,9 @@
     }
   }
 
-  // Registers the Service Worker, requests notification permission, and
-  // subscribes this browser to Web Push, then stores the subscription in
-  // RTDB. Deliberately never throws or blocks the trip join below - a
-  // denied permission or unsupported browser just means the observer
-  // relies on the live dashboard instead of native notifications.
   async function enablePushNotifications(tripId, pin) {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setPushStatus('Push notifications are not supported in this browser - you can still view live updates on this page.');
+      setPushStatus('Push notifications not supported in this browser.');
       return;
     }
     try {
@@ -438,7 +743,7 @@
       const permission = await Notification.requestPermission();
 
       if (permission !== 'granted') {
-        setPushStatus('Notifications not enabled - you can still view live updates on this page.');
+        setPushStatus('Notifications not enabled.');
         return;
       }
 
@@ -452,46 +757,209 @@
 
       const tripRef = ref(database, 'trips/' + tripId + '/' + pin);
       await update(tripRef, { pushSubscription: subscription.toJSON() });
-      setPushStatus('Push notifications enabled for this trip.');
+      setPushStatus('Push notifications enabled.');
     } catch (err) {
       console.warn('Push notification setup failed:', err.message);
-      setPushStatus('Could not enable push notifications: ' + err.message);
+      setPushStatus('Push notifications: ' + err.message);
     }
   }
 
-  // ----- Map state -----
   let map = null;
-  let routePolyline = null;
+  let mapLoaded = false;
   let pickupMarker = null;
   let destinationMarker = null;
   let liveMarker = null;
-
-  // Tracks whether route metadata (pickup/destination/waypoints) has
-  // already been drawn, so we don't redraw it on every location update -
-  // only when the routeMeta itself actually changes.
+  let lastKnownLiveLngLat = null;
   let lastDrawnRouteMetaJSON = null;
+  let pendingRouteMeta = null;
+  const recenterBtn = document.getElementById('recenterBtn');
 
-  function ensureMapInitialized() {
+  function ensureMapInitialized(callback) {
     if (map !== null) {
+      if (mapLoaded) {
+        if (typeof callback === 'function') callback();
+      } else if (typeof callback === 'function') {
+        map.once('load', callback);
+      }
       return;
     }
 
-    mapEmptyMessage.style.display = 'none';
-    mapContainer.style.display = 'block';
+    if (mapEmptyMessage) mapEmptyMessage.style.display = 'none';
+    if (mapContainer) mapContainer.style.display = 'block';
+    if (recenterBtn) recenterBtn.style.display = 'flex';
 
-    map = L.map('mapContainer', {
-      zoomControl: true,
+    map = new maplibregl.Map({
+      container: 'mapContainer',
+      style: 'https://tiles.openfreemap.org/styles/positron',
+      center: [79.5941, 17.9784],
+      zoom: 11,
+      pitch: 0,
+      bearing: 0,
       attributionControl: true
-    }).setView([17.9784, 79.5941], 10);
+    });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: true, showZoom: true }),
+      'bottom-right'
+    );
 
-    setTimeout(function () {
-      map.invalidateSize();
-    }, 200);
+    map.on('load', function () {
+      mapLoaded = true;
+
+      // Add route source & layers
+      if (!map.getSource('navalert-route')) {
+        map.addSource('navalert-route', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'LineString', coordinates: [] }
+          }
+        });
+
+        // Route casing (soft blue halo)
+        map.addLayer({
+          id: 'navalert-route-casing',
+          type: 'line',
+          source: 'navalert-route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#93c5fd',
+            'line-width': 8,
+            'line-opacity': 0.65
+          }
+        });
+
+        // Route main line (refined cobalt blue)
+        map.addLayer({
+          id: 'navalert-route-line',
+          type: 'line',
+          source: 'navalert-route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#1d4ed8',
+            'line-width': 5,
+            'line-opacity': 0.95
+          }
+        });
+      }
+
+      // Add traveled path source & layer
+      if (!map.getSource('navalert-traveled')) {
+        map.addSource('navalert-traveled', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'LineString', coordinates: [] }
+          }
+        });
+
+        map.addLayer({
+          id: 'navalert-traveled-line',
+          type: 'line',
+          source: 'navalert-traveled',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#059669',
+            'line-width': 4,
+            'line-dasharray': [1.5, 1.5],
+            'line-opacity': 0.9
+          }
+        });
+      }
+
+      if (pendingRouteMeta) {
+        applyRouteMetaToMap(pendingRouteMeta);
+        pendingRouteMeta = null;
+      }
+
+      if (typeof callback === 'function') {
+        callback();
+      }
+
+      setTimeout(function () {
+        if (map) map.resize();
+      }, 200);
+    });
+
+    if (recenterBtn) {
+      recenterBtn.addEventListener('click', function () {
+        if (lastKnownLiveLngLat && map) {
+          map.flyTo({
+            center: lastKnownLiveLngLat,
+            zoom: Math.max(map.getZoom(), 15),
+            duration: 800
+          });
+        }
+      });
+    }
+
+    window.addEventListener('resize', function () {
+      if (map) map.resize();
+    });
+  }
+
+  function applyRouteMetaToMap(routeMeta) {
+    if (!map || !mapLoaded) return;
+    if (!routeMeta || !routeMeta.pickup || !routeMeta.destination || !routeMeta.waypoints) return;
+
+    if (pickupMarker) {
+      pickupMarker.remove();
+      pickupMarker = null;
+    }
+    if (destinationMarker) {
+      destinationMarker.remove();
+      destinationMarker = null;
+    }
+
+    // Origin custom pin 'A'
+    const elPickup = document.createElement('div');
+    elPickup.className = 'map-marker-pin origin';
+    elPickup.innerHTML = 'A';
+    elPickup.title = 'Pickup';
+    pickupMarker = new maplibregl.Marker({ element: elPickup })
+      .setLngLat([routeMeta.pickup.lon, routeMeta.pickup.lat])
+      .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Pickup'))
+      .addTo(map);
+
+    // Destination custom pin 'B'
+    const elDest = document.createElement('div');
+    elDest.className = 'map-marker-pin destination';
+    elDest.innerHTML = 'B';
+    elDest.title = 'Destination';
+    destinationMarker = new maplibregl.Marker({ element: elDest })
+      .setLngLat([routeMeta.destination.lon, routeMeta.destination.lat])
+      .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Destination'))
+      .addTo(map);
+
+    const lineCoords = routeMeta.waypoints.map(p => [p.lon, p.lat]);
+
+    const routeSource = map.getSource('navalert-route');
+    if (routeSource) {
+      routeSource.setData({
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: lineCoords
+        }
+      });
+    }
+
+    // Auto fit route bounds
+    if (lineCoords.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      bounds.extend([routeMeta.pickup.lon, routeMeta.pickup.lat]);
+      bounds.extend([routeMeta.destination.lon, routeMeta.destination.lat]);
+      lineCoords.forEach(c => bounds.extend(c));
+
+      map.fitBounds(bounds, {
+        padding: { top: 40, bottom: 40, left: 40, right: 40 },
+        maxZoom: 16,
+        duration: 900
+      });
+    }
   }
 
   function drawRouteMeta(routeMeta) {
@@ -499,73 +967,83 @@
       return;
     }
 
-    ensureMapInitialized();
-
-    if (pickupMarker) map.removeLayer(pickupMarker);
-    if (destinationMarker) map.removeLayer(destinationMarker);
-    if (routePolyline) map.removeLayer(routePolyline);
-
-    pickupMarker = L.marker([routeMeta.pickup.lat, routeMeta.pickup.lon]).addTo(map).bindPopup('Pickup');
-    destinationMarker = L.marker([routeMeta.destination.lat, routeMeta.destination.lon]).addTo(map).bindPopup('Destination');
-
-    const latLngs = routeMeta.waypoints.map(function (point) {
-      return [point.lat, point.lon];
-    });
-
-    routePolyline = L.polyline(latLngs, { color: '#2563eb', weight: 4 }).addTo(map);
-    map.fitBounds(routePolyline.getBounds(), { padding: [24, 24] });
-  }
-
-  function updateLiveMarker(lat, lon) {
-    ensureMapInitialized();
-
-    if (liveMarker === null) {
-      liveMarker = L.circleMarker([lat, lon], {
-        radius: 8,
-        color: '#ffffff',
-        weight: 2,
-        fillColor: '#4ade80',
-        fillOpacity: 1
-      }).addTo(map).bindPopup('Traveler');
+    if (!map || !mapLoaded) {
+      pendingRouteMeta = routeMeta;
+      ensureMapInitialized(function () {
+        if (pendingRouteMeta) {
+          applyRouteMetaToMap(pendingRouteMeta);
+          pendingRouteMeta = null;
+        }
+      });
     } else {
-      liveMarker.setLatLng([lat, lon]);
+      applyRouteMetaToMap(routeMeta);
     }
   }
 
-  // ----- Traveled path (actual GPS history, separate from planned route) -----
-  let travelPathPolyline = null;
+  function updateLiveMarker(lat, lon, isDeviated) {
+    lastKnownLiveLngLat = [lon, lat];
+    ensureMapInitialized();
 
-  // Draws the traveler's actual path (red dashed line) from the list of
-  // points uploaded by the traveler's phone, keeping it visually distinct
-  // from the planned OSRM route (solid blue line). Redrawn each time new
-  // points arrive from Firebase.
-  function drawTravelPath(travelPathPointsObject) {
+    if (!map) return;
+
+    if (liveMarker === null) {
+      const el = document.createElement('div');
+      el.className = 'live-pulse-marker' + (isDeviated ? ' deviated' : '');
+      el.innerHTML = '<div class="pulse-ring"></div><div class="pulse-dot"></div>';
+      el.title = 'Traveler';
+
+      liveMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([lon, lat])
+        .setPopup(new maplibregl.Popup({ offset: 12 }).setText('Traveler'))
+        .addTo(map);
+    } else {
+      liveMarker.setLngLat([lon, lat]);
+      const markerEl = liveMarker.getElement();
+      if (markerEl) {
+        markerEl.classList.toggle('deviated', !!isDeviated);
+      }
+    }
+  }
+
+  function drawTravelPath(travelPathPointsObject, isDeviated) {
     if (!travelPathPointsObject) {
       return;
     }
 
     ensureMapInitialized();
 
-    // Firebase stores push()-appended points as an object keyed by
-    // auto-generated IDs. Those keys sort chronologically, so converting
-    // to an array via Object.keys() (in insertion order) preserves the
-    // order the traveler actually moved through them.
     const points = Object.keys(travelPathPointsObject).map(function (key) {
       return travelPathPointsObject[key];
     });
 
-    const latLngs = points.map(function (point) {
-      return [point.lat, point.lon];
+    const coordinates = points.map(function (point) {
+      return [point.lon, point.lat];
     });
 
-    if (latLngs.length === 0) {
+    if (coordinates.length === 0) {
       return;
     }
 
-    if (travelPathPolyline === null) {
-      travelPathPolyline = L.polyline(latLngs, { color: '#f87171', weight: 3, dashArray: '4 4' }).addTo(map);
-    } else {
-      travelPathPolyline.setLatLngs(latLngs);
+    if (map && mapLoaded) {
+      const traveledSource = map.getSource('navalert-traveled');
+      if (traveledSource) {
+        traveledSource.setData({
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: coordinates
+          }
+        });
+
+        if (map.getLayer('navalert-traveled-line')) {
+          map.setPaintProperty(
+            'navalert-traveled-line',
+            'line-color',
+            isDeviated ? '#dc2626' : '#059669'
+          );
+        }
+      }
     }
   }
 
@@ -573,9 +1051,6 @@
     return date.toLocaleTimeString('en-GB');
   }
 
-  // 5A: Distance display formatting (presentation only - the traveler's
-  // phone still uploads raw metre values; this only affects how they're
-  // shown here). < 500 m -> metres, >= 500 m -> km.
   function formatDistance(meters) {
     if (meters === null || meters === undefined || isNaN(meters)) {
       return '--';
@@ -586,10 +1061,6 @@
     return (meters / 1000).toFixed(2) + ' km';
   }
 
-  // 5D: Turns the raw alertLevel value ('mild' | 'moderate' | 'severe')
-  // into the capitalized label used in the banner title. Falls back to
-  // a generic label if the level is missing for any reason (e.g. an
-  // older payload written before this field existed).
   function formatSeverityLabel(level) {
     if (level === 'mild') return 'Mild';
     if (level === 'moderate') return 'Moderate';
@@ -604,7 +1075,6 @@
     return 'dot-notstarted';
   }
 
-  // ----- Trip entry elements (Stage 4D) -----
   const tripEntryCard = document.getElementById('tripEntryCard');
   const tripIdInput = document.getElementById('tripIdInput');
   const tripPinInput = document.getElementById('tripPinInput');
@@ -613,59 +1083,41 @@
   const tripEntryError = document.getElementById('tripEntryError');
   const dashboardContainer = document.getElementById('dashboardContainer');
 
-  // Pre-fill Trip ID from a shared link like observer.html?trip=TRIP_ID.
-  // The PIN is deliberately never included in a shareable link, so it's
-  // still left for the observer to enter manually/privately here. (A
-  // separate auto-join check, further below - after Firebase/`database`
-  // is ready - looks for a locally cached PIN and joins automatically
-  // when one is found; this early prefill just covers the fallback
-  // manual-entry path.)
   (function prefillTripIdFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const sharedTripId = params.get('trip');
-    if (sharedTripId) {
+    if (sharedTripId && tripIdInput) {
       tripIdInput.value = sharedTripId;
-      tripPinInput.focus(); // Trip ID is filled in, so guide focus to the next field
+      if (tripPinInput) tripPinInput.focus();
     }
   })();
 
   function showTripEntryError(message) {
-    tripEntryError.style.display = 'block';
-    tripEntryError.textContent = message;
+    if (tripEntryError) {
+      tripEntryError.style.display = 'block';
+      tripEntryError.textContent = message;
+    }
   }
 
   function clearTripEntryError() {
-    tripEntryError.style.display = 'none';
-    tripEntryError.textContent = '';
+    if (tripEntryError) {
+      tripEntryError.style.display = 'none';
+      tripEntryError.textContent = '';
+    }
   }
 
-  // Tracks the currently active Firebase listener (returned by onValue)
-  // so we could detach it if needed (e.g. joining a different trip
-  // without reloading the page).
   let activeUnsubscribe = null;
-
-  let database = null; // set once Firebase initializes successfully
+  let database = null;
 
   try {
     const app = initializeApp(firebaseConfig);
     database = getDatabase(app);
-    setFirebaseStatus('dot-active', 'Connected', 'Firebase initialized. Enter a Trip ID and PIN to monitor a trip.');
+    setFirebaseStatus('dot-active', 'Connected', 'Firebase initialized.');
   } catch (err) {
-    setFirebaseStatus('dot-error', 'Initialization Failed', 'Firebase failed to initialize: ' + err.message);
+    setFirebaseStatus('dot-error', 'Offline', 'Firebase failed: ' + err.message);
     showError('Firebase failed to initialize: ' + err.message);
   }
 
-  // ===================================================================
-  // Auto-join from a cached PIN (push notification tap flow).
-  //
-  // If the URL carries ?trip=TRIP_ID (from prefillTripIdFromUrl above)
-  // AND this exact Trip ID has a PIN cached in localStorage from a
-  // previous successful join on THIS device, fill it in and join
-  // immediately - this is what lets tapping a push notification open
-  // the trip in one step, with no PIN in the URL or notification at
-  // any point. If no cached PIN is found, this does nothing and the
-  // observer falls back to the normal manual PIN entry.
-  // ===================================================================
   (function tryAutoJoinFromCachedPin() {
     const params = new URLSearchParams(window.location.search);
     const sharedTripId = params.get('trip');
@@ -677,95 +1129,76 @@
     try {
       cachedPin = localStorage.getItem('observerTrip_' + sharedTripId);
     } catch (err) {
-      cachedPin = null; // storage unavailable - fall back to manual entry
+      cachedPin = null;
     }
 
-    if (cachedPin) {
+    if (cachedPin && tripIdInput && tripPinInput) {
       tripIdInput.value = sharedTripId;
       tripPinInput.value = cachedPin;
-      handleMonitorTrip(); // function declaration - hoisted, safe to call here
+      handleMonitorTrip();
     }
   })();
 
-  // ===================================================================
-  // STAGE 4D: Join a specific trip by Trip ID + PIN.
-  //
-  // Reads from 'trips/<tripId>/<pin>' - the SAME path the traveler
-  // writes to. Both values must be correct to reach real data; getting
-  // either wrong simply means no data exists at that path (Firebase
-  // returns null), not a special "wrong PIN" error. This matches the
-  // traveler side's access-token design: Trip ID + PIN together act as
-  // a shared credential, not a fully authenticated login.
-  // ===================================================================
   function handleMonitorTrip() {
     clearTripEntryError();
 
-    const tripId = tripIdInput.value.trim();
-    const pin = tripPinInput.value.trim();
+    const tripId = tripIdInput ? tripIdInput.value.trim() : '';
+    const pin = tripPinInput ? tripPinInput.value.trim() : '';
 
     if (!tripId || !pin) {
-      showTripEntryError('Please enter both a Trip ID and a PIN.');
+      showTripEntryError('Please enter both Trip ID and PIN.');
       return;
     }
 
     if (!/^\d{4,6}$/.test(pin)) {
-      showTripEntryError('PIN should be the 4-6 digit code shown on the traveler\'s device.');
+      showTripEntryError('PIN must be the 4-6 digit code shown on the traveler device.');
       return;
     }
 
     if (database === null) {
-      showTripEntryError('Firebase is not connected yet. Please wait a moment and try again.');
+      showTripEntryError('Firebase is connecting. Please wait a moment.');
       return;
     }
 
-    monitorBtn.disabled = true;
-    monitorBtn.textContent = 'CONNECTING...';
+    if (monitorBtn) {
+      monitorBtn.disabled = true;
+      monitorBtn.textContent = 'CONNECTING...';
+    }
 
     const tripRef = ref(database, 'trips/' + tripId + '/' + pin);
 
-    // Register for Web Push and store the subscription alongside this
-    // trip. Not fatal if it fails (denied permission, unsupported
-    // browser, etc.) - the observer still proceeds to view the live
-    // dashboard below either way.
     enablePushNotifications(tripId, pin);
 
-    // onValue fires immediately with current data, then again every time
-    // the data changes - this is what makes the dashboard "live" without
-    // needing to poll or refresh the page.
     activeUnsubscribe = onValue(tripRef, function (snapshot) {
       const data = snapshot.val();
 
       if (!data) {
-        // Either the trip hasn't started uploading yet, or the
-        // Trip ID/PIN combination is wrong. We can't distinguish these
-        // cases without extra plumbing, so we show one honest message.
-        showTripEntryError('No trip data found for this Trip ID/PIN yet. Double-check both values, or wait for the traveler to press Start Monitoring.');
+        showTripEntryError('No active trip found for this Trip ID/PIN. Ensure traveler has started monitoring.');
+        if (monitorBtn) {
+          monitorBtn.disabled = false;
+          monitorBtn.textContent = 'MONITOR TRIP';
+        }
         return;
       }
 
-      // Valid data found - this confirms the Trip ID + PIN pair is
-      // correct. Cache it in localStorage (this device only) so that
-      // tapping a push notification later - which links to
-      // observer.html?trip=<tripId> with NO pin in the URL - can
-      // reopen this exact trip without asking for the PIN again.
       try {
         localStorage.setItem('observerTrip_' + tripId, pin);
       } catch (err) {
-        // Storage unavailable (private browsing, quota, etc.) - not
-        // fatal, the observer just re-enters the PIN next time.
-        console.warn('Could not cache trip credentials locally:', err.message);
+        console.warn('Could not cache trip PIN:', err.message);
       }
 
-      // Valid data found - show the dashboard and hide the entry form.
       clearTripEntryError();
-      tripEntryCard.style.display = 'none';
-      dashboardContainer.style.display = 'block';
-      monitorBtn.disabled = false;
-      monitorBtn.textContent = 'MONITOR TRIP';
+      if (tripEntryCard) tripEntryCard.style.display = 'none';
+      if (dashboardContainer) dashboardContainer.style.display = 'flex';
+      if (monitorBtn) {
+        monitorBtn.disabled = false;
+        monitorBtn.textContent = 'MONITOR TRIP';
+      }
 
-      setFirebaseStatus('dot-active', 'Connected', 'Receiving live trip updates.');
+      setFirebaseStatus('dot-active', 'Tracking', 'Receiving live telemetry.');
 
-      // ----- Route metadata (pickup/destination/route line) -----
+      const isDeviated = data.route && data.route.status === 'Deviated';
+
       if (data.routeMeta) {
         const routeMetaJSON = JSON.stringify(data.routeMeta);
         if (routeMetaJSON !== lastDrawnRouteMetaJSON) {
@@ -774,66 +1207,78 @@
         }
       }
 
-      // ----- Traveled path (actual GPS history) -----
       if (data.travelPathPoints) {
-        drawTravelPath(data.travelPathPoints);
+        drawTravelPath(data.travelPathPoints, isDeviated);
       }
 
-      // ----- Live location -----
       if (data.location) {
         const lat = data.location.latitude;
         const lon = data.location.longitude;
         const accuracy = data.location.accuracy;
 
-        gpsDot.className = 'dot dot-active';
-        gpsLabel.textContent = 'Active';
-        gpsSub.innerHTML =
-          'Latitude: ' + lat.toFixed(6) + ' &nbsp; Longitude: ' + lon.toFixed(6) + '<br>' +
-          'Accuracy: ±' + accuracy.toFixed(1) + ' m';
+        if (gpsDot) gpsDot.className = 'dot dot-active';
+        if (gpsLabel) gpsLabel.textContent = 'Active';
+        if (gpsSub) {
+          gpsSub.innerHTML =
+            'Accuracy: ±' + accuracy.toFixed(1) + ' m &bull; Lat: ' + lat.toFixed(5) + ' &bull; Lon: ' + lon.toFixed(5);
+        }
 
-        updateLiveMarker(lat, lon);
+        updateLiveMarker(lat, lon, isDeviated);
       }
 
-      // ----- Route status -----
       if (data.route) {
-        routeDot.className = 'dot ' + routeStatusToDotClass(data.route.status);
-        routeLabel.textContent = data.route.status || 'Unknown';
+        if (routeDot) routeDot.className = 'dot ' + routeStatusToDotClass(data.route.status);
+        if (routeLabel) routeLabel.textContent = data.route.status || 'Unknown';
 
         const distanceFromRouteText = formatDistance(data.route.distanceFromRoute);
         const destinationDistanceText = formatDistance(data.route.destinationDistance);
 
-        routeSub.innerHTML =
-          'Distance from route: ' + distanceFromRouteText + '<br>' +
-          'Distance to destination: ' + destinationDistanceText;
+        if (routeSub) {
+          routeSub.innerHTML =
+            'Off-route: ' + distanceFromRouteText + ' &nbsp;|&nbsp; To destination: ' + destinationDistanceText;
+        }
 
-        // STAGE 5D: sustained-deviation alert banner, now showing
-        // severity + alert count (e.g. "Severe Route Deviation - Alert #4").
-        // Visibility is still gated on the same alertActive field as
-        // Stage 5C; alertLevel/alertCount are additive fields only used
-        // for the displayed text.
         const shouldShowBanner = data.route.alertActive === true;
-        deviationAlertBanner.style.display = shouldShowBanner ? 'flex' : 'none';
+        if (deviationAlertBanner) {
+          deviationAlertBanner.style.display = shouldShowBanner ? 'flex' : 'none';
+        }
 
-        if (shouldShowBanner) {
+        if (shouldShowBanner && deviationAlertTitle) {
           const severityLabel = formatSeverityLabel(data.route.alertLevel);
           const count = data.route.alertCount || 1;
           deviationAlertTitle.textContent = severityLabel + ' Route Deviation - Alert #' + count;
         }
+
+        // Keep marker and path visual styles synchronized with deviation status
+        if (liveMarker) {
+          const markerEl = liveMarker.getElement();
+          if (markerEl) markerEl.classList.toggle('deviated', isDeviated);
+        }
+        if (map && mapLoaded && map.getLayer('navalert-traveled-line')) {
+          map.setPaintProperty(
+            'navalert-traveled-line',
+            'line-color',
+            isDeviated ? '#dc2626' : '#059669'
+          );
+        }
       }
 
-      // ----- Last update timestamp -----
-      if (data.lastUpdate) {
+      if (data.lastUpdate && lastUpdateText) {
         const updateDate = new Date(data.lastUpdate);
-        lastUpdateText.textContent = 'Last update: ' + formatTime(updateDate);
+        lastUpdateText.textContent = 'Last update received at ' + formatTime(updateDate);
       }
     }, function (err) {
-      monitorBtn.disabled = false;
-      monitorBtn.textContent = 'MONITOR TRIP';
+      if (monitorBtn) {
+        monitorBtn.disabled = false;
+        monitorBtn.textContent = 'MONITOR TRIP';
+      }
       showTripEntryError('Could not read trip data: ' + err.message);
     });
   }
 
-  monitorBtn.addEventListener('click', handleMonitorTrip);
+  if (monitorBtn) {
+    monitorBtn.addEventListener('click', handleMonitorTrip);
+  }
 </script>
 
 </body>

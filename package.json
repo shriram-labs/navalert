@@ -2,6 +2,12 @@
   "name": "navalert",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/search.test.js && node tests/routing.test.js",
+    "test:search": "node tests/search.test.js",
+    "test:routing": "node tests/routing.test.js"
+  },
   "dependencies": {
     "firebase-admin": "^13.0.0",
     "web-push": "^3.6.7"
